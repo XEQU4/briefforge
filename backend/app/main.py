@@ -6,7 +6,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, health, proposals, tasks, teams
+from app.api.routes import auth, health, organizations, proposals, tasks, teams
 from app.core import config
 from app.core.db import SessionLocal
 from app.services.auth_security import hash_session_value, load_active_session
@@ -43,7 +43,7 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
     async def csrf_protection(request: Request, call_next):
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             raw_session = request.cookies.get(config.SESSION_COOKIE_NAME)
-            if raw_session:
+            if raw_session and not request.url.path.startswith("/admin/demo"):
                 async with SessionLocal() as db:
                     active = await load_active_session(db, raw_session)
                     if active is not None:
@@ -71,6 +71,7 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
 
     application.include_router(health.router)
     application.include_router(auth.router)
+    application.include_router(organizations.router)
     application.include_router(tasks.router)
     application.include_router(proposals.router)
     application.include_router(teams.router)

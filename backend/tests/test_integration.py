@@ -54,9 +54,34 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
             await connection.run_sync(Base.metadata.drop_all)
             await connection.run_sync(Base.metadata.create_all)
+        raw_session = "integration-test-session-token"
+        csrf_token = "integration-test-csrf-token"
+        async with SessionLocal() as session:
+            self.business_user = User(email="integration-business@example.com")
+            self.business_org = Organization(name="Integration Business", slug="integration-business")
+            session.add_all([self.business_user, self.business_org])
+            await session.flush()
+            session.add_all([
+                OrganizationMember(
+                    organization_id=self.business_org.id,
+                    user_id=self.business_user.id,
+                    role=OrganizationMemberRole.OWNER,
+                ),
+                AuthSession(
+                    user_id=self.business_user.id,
+                    token_hash=hash_session_value(raw_session),
+                    csrf_token_hash=hash_session_value(csrf_token),
+                    expires_at=utcnow_naive() + timedelta(days=1),
+                ),
+            ])
+            await session.commit()
         self.client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+            headers={"X-CSRF-Token": csrf_token},
         )
+        self.client.cookies.set(config.SESSION_COOKIE_NAME, raw_session, domain="testserver.local", path="/")
+        self.client.cookies.set(config.CSRF_COOKIE_NAME, csrf_token, domain="testserver.local", path="/")
         self.requests = []
         self.ml_handler = self._success_handler
         self.ml_patch = patch.object(ai_client, "_new_ml_client", side_effect=self._ml_client)
@@ -98,6 +123,17 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         data = response.json()
         self.assertGreaterEqual(len(data["questions"]), 3)
         return data
+
+    async def new_registered_client(self, email: str):
+        client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+        response = await client.post(
+            "/auth/register",
+            json={"email": email, "password": "a valid test password"},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        csrf_token = client.cookies.get(config.CSRF_COOKIE_NAME)
+        client.headers["X-CSRF-Token"] = csrf_token
+        return client, response.json()
 
     async def test_task_lifecycle_enums_and_status_patch_is_rejected(self):
         created = await self.create_task()
@@ -566,7 +602,10 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 async with SessionLocal() as session:
                     seeded = (await session.execute(select(Task).where(Task.status == "confirmed"))).scalars().first()
                     original_title = seeded.title
-                await client.patch(f"/tasks/{seeded.id}", json={"title": "Manual edit survives"})
+                async with SessionLocal() as session:
+                    seeded_task = await session.get(Task, seeded.id)
+                    seeded_task.title = "Manual edit survives"
+                    await session.commit()
                 repeat = await client.post("/admin/demo/seed", headers=headers)
                 self.assertEqual(repeat.status_code, 200)
                 self.assertEqual(repeat.json()["state"], "already_seeded")
@@ -664,6 +703,7 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(valid.json()["email"], "active@example.com")
         self.assertNotIn("password_hash", valid.text)
         csrf = self.client.cookies.get(config.CSRF_COOKIE_NAME)
+        self.client.headers["X-CSRF-Token"] = csrf
         valid_session_token = self.client.cookies.get(config.SESSION_COOKIE_NAME)
         async with SessionLocal() as session:
             user = await session.scalar(select(User).where(User.email == "active@example.com"))
@@ -760,7 +800,220 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as anonymous:
             public = await anonymous.post("/teams", json={"name": "Still public"})
-            self.assertEqual(public.status_code, 201, public.text)
+            self.assertEqual(public.status_code, 401, public.text)
+
+    async def test_organization_bootstrap_and_task_creation_membership_rules(self):
+        alice, _alice_data = await self.new_registered_client("business-a@example.com")
+        bob, _bob_data = await self.new_registered_client("business-b@example.com")
+        anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+        try:
+            self.assertEqual((await anonymous.post("/organizations", json={"name": "No auth", "slug": "no-auth"})).status_code, 401)
+            org_a = await alice.post("/organizations", json={"name": "Business A", "slug": "business-a"})
+            self.assertEqual(org_a.status_code, 201, org_a.text)
+            mine_a = await alice.get("/organizations/mine")
+            self.assertEqual([item["id"] for item in mine_a.json()], [org_a.json()["id"]])
+            async with SessionLocal() as session:
+                owner_membership = await session.scalar(
+                    select(OrganizationMember).where(
+                        OrganizationMember.organization_id == org_a.json()["id"],
+                        OrganizationMember.user_id == _alice_data["id"],
+                    )
+                )
+                self.assertEqual(owner_membership.role, OrganizationMemberRole.OWNER)
+
+            one_org_task = await alice.post("/tasks", json={"draft_text": "A needs a structured challenge"})
+            self.assertEqual(one_org_task.status_code, 201, one_org_task.text)
+            async with SessionLocal() as session:
+                created = await session.get(Task, one_org_task.json()["task"]["id"])
+                self.assertEqual(created.organization_id, org_a.json()["id"])
+                self.assertEqual(created.created_by_user_id, _alice_data["id"])
+
+            org_a2 = await alice.post("/organizations", json={"name": "Business A Two", "slug": "business-a-two"})
+            self.assertEqual(org_a2.status_code, 201, org_a2.text)
+            ambiguous = await alice.post("/tasks", json={"draft_text": "Ambiguous organization"})
+            self.assertEqual(ambiguous.status_code, 409)
+            explicit = await alice.post(
+                "/tasks", json={"draft_text": "Explicit organization", "organization_id": org_a2.json()["id"]}
+            )
+            self.assertEqual(explicit.status_code, 201, explicit.text)
+
+            no_org = await bob.post("/tasks", json={"draft_text": "No organization yet"})
+            self.assertEqual(no_org.status_code, 409)
+            org_b = await bob.post("/organizations", json={"name": "Business B", "slug": "business-b"})
+            self.assertEqual(org_b.status_code, 201, org_b.text)
+            forbidden_create = await bob.post(
+                "/tasks", json={"draft_text": "Cross organization", "organization_id": org_a.json()["id"]}
+            )
+            self.assertEqual(forbidden_create.status_code, 403)
+            mine_b = await bob.get("/organizations/mine")
+            self.assertEqual([item["id"] for item in mine_b.json()], [org_b.json()["id"]])
+            self.assertEqual((await anonymous.post("/tasks", json={"draft_text": "Anonymous"})).status_code, 401)
+        finally:
+            await alice.aclose()
+            await bob.aclose()
+            await anonymous.aclose()
+
+    async def test_task_mutations_require_organization_membership_and_keep_catalog_public(self):
+        task_data = await self.create_task(topic="Authorization test")
+        task_id = task_data["task"]["id"]
+        member, member_data = await self.new_registered_client("business-member@example.com")
+        unrelated, _unrelated_data = await self.new_registered_client("business-unrelated@example.com")
+        anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+        try:
+            async with SessionLocal() as session:
+                session.add(OrganizationMember(
+                    organization_id=self.business_org.id,
+                    user_id=member_data["id"],
+                    role=OrganizationMemberRole.MEMBER,
+                ))
+                unrelated_org = Organization(name="Unrelated", slug="unrelated-business")
+                session.add(unrelated_org)
+                await session.flush()
+                session.add(OrganizationMember(
+                    organization_id=unrelated_org.id,
+                    user_id=_unrelated_data["id"],
+                    role=OrganizationMemberRole.OWNER,
+                ))
+                await session.commit()
+
+            member_created = await member.post(
+                "/tasks",
+                json={"draft_text": "Member created task", "organization_id": self.business_org.id},
+            )
+            self.assertEqual(member_created.status_code, 201, member_created.text)
+            async with SessionLocal() as session:
+                member_task = await session.get(Task, member_created.json()["task"]["id"])
+                self.assertEqual(member_task.created_by_user_id, member_data["id"])
+
+            self.assertEqual((await anonymous.post("/tasks", json={"draft_text": "Anonymous"})).status_code, 401)
+            self.assertEqual((await anonymous.patch(f"/tasks/{task_id}", json={"title": "Anonymous"})).status_code, 401)
+            self.assertEqual((await anonymous.post("/teams", json={"name": "Anonymous"})).status_code, 401)
+            self.assertEqual((await unrelated.patch(f"/tasks/{task_id}", json={"title": "Denied"})).status_code, 403)
+            self.assertEqual((await unrelated.get(f"/tasks/{task_id}/rating")).status_code, 403)
+
+            answered = await member.patch(
+                f"/tasks/{task_id}/answers", json={"answers": ["Need", "Users", "Success"]}
+            )
+            self.assertEqual(answered.status_code, 200, answered.text)
+            edited = await member.patch(f"/tasks/{task_id}", json={"need": "Member edit"})
+            self.assertEqual(edited.status_code, 200, edited.text)
+            confirmed = await member.post(f"/tasks/{task_id}/confirm", json={})
+            self.assertEqual(confirmed.status_code, 200, confirmed.text)
+            self.assertEqual((await unrelated.patch(f"/tasks/{task_id}", json={"title": "Denied"})).status_code, 403)
+            self.assertEqual((await anonymous.get(f"/tasks/{task_id}/rating")).status_code, 200)
+            catalog = await anonymous.get("/tasks")
+            self.assertEqual([task["id"] for task in catalog.json()], [task_id])
+
+            async with SessionLocal() as session:
+                legacy_confirmed = Task(title="Legacy public", status=TaskStatus.CONFIRMED)
+                legacy_draft = Task(title="Legacy private", status=TaskStatus.DRAFT)
+                session.add_all([legacy_confirmed, legacy_draft])
+                await session.commit()
+                legacy_confirmed_id, legacy_draft_id = legacy_confirmed.id, legacy_draft.id
+            legacy_catalog = await anonymous.get("/tasks")
+            self.assertIn(legacy_confirmed_id, [task["id"] for task in legacy_catalog.json()])
+            self.assertNotIn(legacy_draft_id, [task["id"] for task in legacy_catalog.json()])
+            self.assertEqual((await anonymous.get(f"/tasks/{legacy_confirmed_id}/rating")).status_code, 200)
+            self.assertEqual((await anonymous.get(f"/tasks/{legacy_draft_id}/rating")).status_code, 401)
+            self.assertEqual((await self.client.patch(f"/tasks/{legacy_confirmed_id}", json={"title": "No adoption"})).status_code, 403)
+            self.assertEqual((await self.client.post(f"/tasks/{legacy_draft_id}/confirm", json={})).status_code, 403)
+        finally:
+            await member.aclose()
+            await unrelated.aclose()
+            await anonymous.aclose()
+
+    async def test_team_membership_controls_proposal_submission_visibility_and_decisions(self):
+        task_data = await self.create_task(topic="Proposal authorization")
+        task_id = task_data["task"]["id"]
+        self.assertEqual((await self.client.patch(
+            f"/tasks/{task_id}/answers", json={"answers": ["Need", "Users", "Success"]}
+        )).status_code, 200)
+        self.assertEqual((await self.client.post(f"/tasks/{task_id}/confirm", json={})).status_code, 200)
+
+        student_a, student_a_data = await self.new_registered_client("student-a@example.com")
+        student_b, student_b_data = await self.new_registered_client("student-b@example.com")
+        business_b, business_b_data = await self.new_registered_client("business-proposals-b@example.com")
+        business_c, business_c_data = await self.new_registered_client("business-proposals-c@example.com")
+        outsider_student, _outsider_student_data = await self.new_registered_client("student-outsider@example.com")
+        anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+        try:
+            team_a = await student_a.post("/teams", json={"name": "Student A Team", "interests": "Robotics"})
+            team_b = await student_b.post("/teams", json={"name": "Student B Team"})
+            self.assertEqual(team_a.status_code, 201, team_a.text)
+            self.assertEqual(team_b.status_code, 201, team_b.text)
+            async with SessionLocal() as session:
+                owner = await session.scalar(select(TeamMember).where(TeamMember.team_id == team_a.json()["id"]))
+                self.assertEqual(owner.user_id, student_a_data["id"])
+                self.assertEqual(owner.role, TeamMemberRole.OWNER)
+                session.add(TeamMember(
+                    team_id=team_a.json()["id"], user_id=student_b_data["id"], role=TeamMemberRole.MEMBER
+                ))
+                business_org_b = Organization(name="Proposal Business B", slug="proposal-business-b")
+                business_org_c = Organization(name="Proposal Business C", slug="proposal-business-c")
+                session.add_all([business_org_b, business_org_c])
+                await session.flush()
+                session.add(OrganizationMember(
+                    organization_id=business_org_b.id,
+                    user_id=business_b_data["id"],
+                    role=OrganizationMemberRole.OWNER,
+                ))
+                session.add_all([
+                    OrganizationMember(
+                        organization_id=self.business_org.id,
+                        user_id=business_b_data["id"],
+                        role=OrganizationMemberRole.MEMBER,
+                    ),
+                    OrganizationMember(
+                        organization_id=business_org_c.id,
+                        user_id=business_c_data["id"],
+                        role=OrganizationMemberRole.OWNER,
+                    ),
+                ])
+                await session.commit()
+
+            self.assertEqual((await anonymous.post("/teams", json={"name": "Anonymous"})).status_code, 401)
+            payload = {"team_id": team_a.json()["id"], "idea": "A proposal"}
+            submitted = await student_a.post(f"/tasks/{task_id}/proposals", json=payload)
+            self.assertEqual(submitted.status_code, 201, submitted.text)
+            submitted_again = await student_a.post(f"/tasks/{task_id}/proposals", json={**payload, "idea": "Another proposal"})
+            self.assertEqual(submitted_again.status_code, 201, submitted_again.text)
+            member_submission = await student_b.post(f"/tasks/{task_id}/proposals", json=payload)
+            self.assertEqual(member_submission.status_code, 201, member_submission.text)
+            async with SessionLocal() as session:
+                proposal = await session.get(Proposal, submitted.json()["id"])
+                self.assertEqual(proposal.submitted_by_user_id, student_a_data["id"])
+                member_proposal = await session.get(Proposal, member_submission.json()["id"])
+                self.assertEqual(member_proposal.submitted_by_user_id, student_b_data["id"])
+
+            self.assertEqual((await outsider_student.post(f"/tasks/{task_id}/proposals", json=payload)).status_code, 403)
+            self.assertEqual((await anonymous.post(f"/tasks/{task_id}/proposals", json=payload)).status_code, 401)
+            self.assertEqual((await student_a.get(f"/tasks/{task_id}/proposals")).status_code, 403)
+            self.assertEqual((await business_c.get(f"/tasks/{task_id}/proposals")).status_code, 403)
+            self.assertEqual((await anonymous.get(f"/tasks/{task_id}/proposals")).status_code, 401)
+            listed = await self.client.get(f"/tasks/{task_id}/proposals")
+            self.assertEqual(listed.status_code, 200)
+            self.assertEqual(len(listed.json()), 3)
+
+            self.assertEqual((await student_a.patch(f"/proposals/{submitted.json()['id']}", json={"status": "accepted"})).status_code, 403)
+            self.assertEqual((await business_c.patch(f"/proposals/{submitted.json()['id']}", json={"status": "accepted"})).status_code, 403)
+            self.assertEqual((await anonymous.patch(f"/proposals/{submitted.json()['id']}", json={"status": "accepted"})).status_code, 401)
+            accepted = await self.client.patch(f"/proposals/{submitted.json()['id']}", json={"status": "accepted"})
+            rejected = await business_b.patch(f"/proposals/{submitted_again.json()['id']}", json={"status": "rejected"})
+            self.assertEqual(accepted.status_code, 200, accepted.text)
+            self.assertEqual(accepted.json()["status"], "accepted")
+            self.assertEqual(rejected.status_code, 200, rejected.text)
+            self.assertEqual(rejected.json()["status"], "rejected")
+
+            public_teams = await anonymous.get("/teams")
+            self.assertEqual(public_teams.status_code, 200)
+            self.assertEqual(set(public_teams.json()[0]), {"id", "name", "interests", "skills", "technologies"})
+        finally:
+            await student_a.aclose()
+            await student_b.aclose()
+            await business_b.aclose()
+            await business_c.aclose()
+            await outsider_student.aclose()
+            await anonymous.aclose()
 
     async def _admin_request(self, application):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url="http://testserver") as client:
@@ -854,7 +1107,7 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await session.execute(delete(Organization).where(Organization.id == new_org.id))
             await session.execute(delete(Team).where(Team.id == new_team.id))
             await session.commit()
-            self.assertEqual(await session.scalar(select(func.count()).select_from(OrganizationMember)), 0)
+            self.assertEqual(await session.scalar(select(func.count()).select_from(OrganizationMember)), 1)
             self.assertEqual(await session.scalar(select(func.count()).select_from(TeamMember)), 0)
 
 

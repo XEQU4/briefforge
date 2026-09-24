@@ -23,6 +23,7 @@ class TaskFields(BaseModel):
 class TaskCreate(BaseModel):
     draft_text: str = Field(min_length=1)
     topic: str | None = None
+    organization_id: int | None = None
 
     @field_validator("draft_text")
     @classmethod

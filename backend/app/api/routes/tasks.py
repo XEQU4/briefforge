@@ -4,8 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.db import commit_or_rollback, get_db
+from app.api.dependencies.auth import get_current_user, get_optional_current_user
+from app.api.dependencies.authorization import require_organization_member, require_task_organization_member
 from app.domain.status import TaskStatus
-from app.models import ClarifyingQuestion, Task
+from app.models import ClarifyingQuestion, OrganizationMember, Task, User
 from app.schemas import AnswersSubmit, TaskCreate, TaskRead, TaskUpdate, TaskWithQuestions
 from app.services.ai_client import GENERATED_CARD_FIELDS, build_card_from_answers, get_clarifying_questions
 from app.services.lifecycle import InvalidTransition, transition_task
@@ -73,10 +75,38 @@ def _normalize_answers(questions: list[ClarifyingQuestion], incoming: list[str] 
 
 
 @router.post("/tasks", response_model=TaskWithQuestions, status_code=201)
-async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
+async def create_task(
+    payload: TaskCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if payload.organization_id is None:
+        organization_ids = list(
+            (await db.scalars(
+                select(OrganizationMember.organization_id)
+                .where(OrganizationMember.user_id == user.id)
+                .order_by(OrganizationMember.organization_id)
+            )).all()
+        )
+        if not organization_ids:
+            raise HTTPException(status_code=409, detail="Create or join an organization before creating tasks")
+        if len(organization_ids) > 1:
+            raise HTTPException(status_code=409, detail="organization_id is required when you belong to multiple organizations")
+        organization_id = organization_ids[0]
+    else:
+        organization_id = payload.organization_id
+        await require_organization_member(organization_id, user, db)
+
     # Network work happens before the first database write.
     questions = await get_clarifying_questions(payload.draft_text, payload.topic)
-    task = Task(context=payload.draft_text, topic=payload.topic, status=TaskStatus.CLARIFYING, questions=[])
+    task = Task(
+        context=payload.draft_text,
+        topic=payload.topic,
+        status=TaskStatus.CLARIFYING,
+        organization_id=organization_id,
+        created_by_user_id=user.id,
+        questions=[],
+    )
     db.add(task)
     task.questions.extend(
         ClarifyingQuestion(question_text=question_text, order=index)
@@ -88,8 +118,14 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/tasks/{task_id}/answers", response_model=TaskRead)
-async def answer_task(task_id: int, payload: AnswersSubmit, db: AsyncSession = Depends(get_db)):
+async def answer_task(
+    task_id: int,
+    payload: AnswersSubmit,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     task = await _get_task(task_id, db)
+    await require_task_organization_member(task, user, db)
     try:
         next_status = transition_task(task.status, TaskStatus.CARD_READY)
     except InvalidTransition:
@@ -114,8 +150,14 @@ async def answer_task(task_id: int, payload: AnswersSubmit, db: AsyncSession = D
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskRead)
-async def update_task(task_id: int, payload: TaskUpdate, db: AsyncSession = Depends(get_db)):
+async def update_task(
+    task_id: int,
+    payload: TaskUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     task = await _get_task(task_id, db)
+    await require_task_organization_member(task, user, db)
     updates = payload.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(task, field, value)
@@ -129,8 +171,13 @@ async def update_task(task_id: int, payload: TaskUpdate, db: AsyncSession = Depe
 
 
 @router.post("/tasks/{task_id}/confirm", response_model=TaskRead)
-async def confirm_task(task_id: int, db: AsyncSession = Depends(get_db)):
+async def confirm_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     task = await _get_task(task_id, db)
+    await require_task_organization_member(task, user, db)
     try:
         next_status = transition_task(task.status, TaskStatus.CONFIRMED)
     except InvalidTransition:
@@ -145,8 +192,16 @@ async def confirm_task(task_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/tasks/{task_id}/rating")
-async def task_rating(task_id: int, db: AsyncSession = Depends(get_db)):
+async def task_rating(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_optional_current_user),
+):
     task = await _get_task(task_id, db)
+    if task.status != TaskStatus.CONFIRMED:
+        if user is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        await require_task_organization_member(task, user, db)
     score, breakdown, missing = calculate_rating(task)
     return {"score": score, "readiness_level": readiness_for_score(score), "breakdown": breakdown,
             "missing_fields": missing, "suggestions": [SUGGESTIONS[field] for field in missing]}

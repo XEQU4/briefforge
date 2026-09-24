@@ -45,29 +45,47 @@ Returns the public user for an active, non-expired session. Missing, malformed, 
 
 Example error (`401`): `{ "detail": "Authentication required" }`.
 
-`SESSION_TTL_SECONDS` defaults to seven days. Sessions do not slide. Existing users created before local-password authentication have a nullable `password_hash` and cannot log in until a password is established through a future account-recovery/password-setting flow; no password is invented during migration. Existing task/team/proposal endpoints remain unauthenticated in this phase. Object-level authorization is deferred.
+`SESSION_TTL_SECONDS` defaults to seven days. Sessions do not slide. Existing users created before local-password authentication have a nullable `password_hash` and cannot log in until a password is established through a future account-recovery/password-setting flow; no password is invented during migration.
+
+Both organization roles (`owner` and `member`) may manage organization tasks. Both team roles (`owner` and `member`) may submit proposals for their team. Creator, team-owner, and proposal-submitter identities are derived from the current session. The backend does not accept frontend role switches.
+
+Cookie-authenticated `POST`, `PATCH`, `PUT`, and `DELETE` requests require the CSRF header above. Public `GET` endpoints are exempt.
+
+## Organizations
+
+### `POST /organizations` — authenticated
+
+Request: `{ "name": "Example Business", "slug": "example-business" }`
+
+Creates the organization and an `owner` membership for the current user atomically. Returns `OrganizationRead` with status `201`. A duplicate normalized slug returns `409`.
+
+### `GET /organizations/mine` — authenticated
+
+Returns the current user's organizations as `[OrganizationRead]`; organizations without a membership are omitted.
 
 ## Tasks
 
-### `POST /tasks`
+### `POST /tasks` — authenticated
 
-Request: `{ "draft_text": "string", "topic": "string|null" }`
+Request: `{ "draft_text": "string", "topic": "string|null", "organization_id": 1 }` (`organization_id` is optional when the user belongs to exactly one organization).
+
+The user must belong to the selected organization. If `organization_id` is omitted, no memberships returns `409` instructing the user to create or join an organization; multiple memberships returns `409` requiring an explicit ID. A user who is not a member receives `403`. The server records the organization and current user as task ownership/attribution.
 
 Response `201`: `{ "task": Task, "questions": [Question] }`. The task is created in `clarifying` status and at least three questions are returned.
 
-### `PATCH /tasks/{id}/answers`
+### `PATCH /tasks/{id}/answers` — authenticated organization member
 
 Request: `{ "answers": ["answer"] }` or `{ "answers": { "question key": "answer" } }`
 
 Response: `Task` with the generated editable card and `card_ready` status.
 
-### `PATCH /tasks/{id}`
+### `PATCH /tasks/{id}` — authenticated organization member
 
 Request: any subset of editable card fields (`title`, `context`, `need`, `users`, `data_materials`, `constraints`, `expected_result`, `success_criteria`, `contact`, `interaction_format`, `topic`). Task status cannot be changed through this endpoint.
 
 Response: `Task`.
 
-### `POST /tasks/{id}/confirm`
+### `POST /tasks/{id}/confirm` — authenticated organization member
 
 Request: `{}`
 
@@ -75,15 +93,17 @@ Response: `Task` with recalculated `rating_score`, `rating_breakdown`, `readines
 
 Task lifecycle transitions are `draft` → `clarifying` → `card_ready` → `confirmed`. Task creation continues to start at `clarifying`; confirmation requires `card_ready`. Reconfirming an already confirmed task is idempotent.
 
-### `GET /tasks/{id}/rating`
+### `GET /tasks/{id}/rating` — public for confirmed tasks; otherwise authenticated organization member
 
 Response: `{ "score": 0, "readiness_level": "draft", "breakdown": { "context+need": 0, "data_materials": 0, "expected_result": 0, "success_criteria": 0, "constraints": 0, "users": 0, "contact+interaction_format": 0 }, "missing_fields": ["context"], "suggestions": ["Add context"] }` (readiness is `draft`, `working`, `ready`, or `priority`; `suggestions` gives actionable guidance for each missing field.)
 
-### `GET /tasks`
+### `GET /tasks` — public
 
 Query parameters: optional `topic`, `readiness_level`, and `sort=rating`.
 
 Response: `[Task]` containing confirmed catalog tasks.
+
+Only confirmed tasks appear in the public catalog. Confirmed legacy tasks without an organization remain visible. Legacy tasks cannot be edited, answered, confirmed, or have private ratings viewed through normal product routes; they are never adopted by the current user.
 
 `Task`: `{ "id": 1, "title": "string|null", "context": "string|null", "need": "string|null", "users": "string|null", "data_materials": "string|null", "constraints": "string|null", "expected_result": "string|null", "success_criteria": "string|null", "contact": "string|null", "interaction_format": "string|null", "topic": "string|null", "status": "confirmed", "rating_score": 0, "rating_breakdown": {}, "readiness_level": "draft", "created_at": "datetime|null", "updated_at": "datetime|null" }`
 
@@ -91,21 +111,21 @@ Response: `[Task]` containing confirmed catalog tasks.
 
 ## Proposals
 
-### `POST /tasks/{id}/proposals`
+### `POST /tasks/{id}/proposals` — authenticated member of the selected team
 
 Request: `{ "team_id": 1, "idea": "string", "plan": "string|null", "deadline": "string|null", "link": "string|null" }`
 
-Response `201`: `Proposal` with `pending` status.
+The task must exist and be confirmed. The current user must belong to the selected team or receives `403`. The server sets `submitted_by_user_id` from the current session. Response `201`: `Proposal` with `pending` status.
 
-### `GET /tasks/{id}/proposals`
+### `GET /tasks/{id}/proposals` — authenticated member of the task's organization
 
-Response: `[Proposal]`.
+Only an organization member may list a task's proposals. Team members cannot list competitor proposals. Tasks without an organization cannot use this product route. Response: `[Proposal]`.
 
-### `PATCH /proposals/{id}`
+### `PATCH /proposals/{id}` — authenticated member of the proposal task's organization
 
 Request: `{ "status": "pending|accepted|rejected" }`
 
-Response: `Proposal`. This endpoint only changes a manually supplied status and never assigns a team automatically.
+Only a member of the task's organization may decide a proposal; submitting it as a team member does not grant decision rights. Response: `Proposal`. This endpoint only changes a manually supplied status and never assigns a team automatically.
 
 Proposal lifecycle transitions are `pending` → `accepted` or `pending` → `rejected`. Repeating `pending` is idempotent; `accepted` and `rejected` are terminal.
 
@@ -113,15 +133,15 @@ Proposal lifecycle transitions are `pending` → `accepted` or `pending` → `re
 
 ## Teams
 
-### `POST /teams`
+### `POST /teams` — authenticated
 
 Request: `{ "name": "string", "interests": "string|null", "skills": "string|null", "technologies": "string|null" }`
 
-Response `201`: `Team`.
+The server creates the team and its initial `owner` membership for the current user atomically. No user ID is accepted for ownership. Response `201`: `Team`.
 
-### `GET /teams`
+### `GET /teams` — public
 
-Response: `[Team]`.
+Response: `[Team]` containing only public profile fields; membership and account data are not returned.
 
 `Team`: `{ "id": 1, "name": "string", "interests": "string|null", "skills": "string|null", "technologies": "string|null" }`
 # ML service API
