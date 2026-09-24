@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "id": "english-clinic-follow-up",
+      "topic": "Clinic follow-up workflow",
+      "draft_text": "A neighborhood clinic wants to reduce missed follow-up appointments. The intended task is to improve the process used after a visit.",
+      "answers_by_field": {
+        "users": "Synthetic clarification: clinic nurses and care coordinators",
+        "data_materials": "Synthetic clarification: an appointment export with follow-up status",
+        "success_criteria": "Synthetic clarification: at least 85% of follow-up calls are completed within two working days"
+      }
+    },
+    {
+      "id": "russian-school-consultations",
+      "topic": "Запись на консультации в школе",
+      "draft_text": "Школьный центр хочет упростить запись на консультации. Нужен более понятный процесс для семей.",
+      "answers_by_field": {
+        "users": "Синтетический ответ: ученики и их родители",
+        "data_materials": "Синтетический ответ: расписание специалистов и список доступных слотов",
+        "success_criteria": "Синтетический ответ: запись подтверждается не более чем за один рабочий день"
+      }
+    },
+    {
+      "id": "english-library-sign-up",
+      "topic": "Library reading group sign-up",
+      "draft_text": "A public library wants to make its monthly reading-group registration easier. The current process requires staff to follow up with applicants manually.",
+      "answers_by_field": {
+        "users": "Synthetic clarification: library staff and reading-group applicants",
+        "data_materials": "Synthetic clarification: the current sign-up form and participant list",
+        "success_criteria": "Synthetic clarification: reduce incomplete registrations by 20% during the pilot"
+      }
+    }
+  ]
+}

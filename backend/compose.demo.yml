@@ -1,0 +1,5 @@
+services:
+  backend:
+    environment:
+      DEMO_ADMIN_ENABLED: "true"
+      DEMO_ADMIN_TOKEN: ${DEMO_ADMIN_TOKEN:?Set DEMO_ADMIN_TOKEN in your shell first}

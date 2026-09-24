@@ -1,0 +1,47 @@
+{
+  "drafts": [
+    {
+      "id": "01-minimal-russian",
+      "language": "Russian",
+      "topic": "Калькулятор учета расходов",
+      "draft_text": "Нужен простой способ считать расходы небольших компаний.",
+      "answers": {
+        "Кто будет пользоваться решением для темы «Калькулятор учета расходов»?": "Бухгалтеры небольших компаний и владельцы бизнеса."
+      }
+    },
+    {
+      "id": "02-some-details-english",
+      "language": "English",
+      "topic": "Appointment reminder pilot",
+      "draft_text": "We want to reduce missed appointments at two clinics.\nUsers: Regional clinic coordinators.\nData: Weekly CSV appointment exports.",
+      "answers": {
+        "What context should the task card include for ‘Appointment reminder pilot’?": "The pilot runs for six weeks at two clinics."
+      }
+    },
+    {
+      "id": "03-medium-russian",
+      "language": "Russian",
+      "topic": "Кружок робототехники",
+      "draft_text": "Контекст: В школе запускают кружок робототехники.\nПользователи: Ученики 7–9 классов и преподаватель.\nДанные: Список доступных наборов и расписание кабинета.\nОжидаемый результат: План занятий на семестр.",
+      "answers": {
+        "Какие ограничения, требования или сроки нужно учесть для темы «Кружок робототехники»?": "Занятия проходят раз в неделю, бюджет на материалы ограничен."
+      }
+    },
+    {
+      "id": "04-nearly-complete-english",
+      "language": "English",
+      "topic": "Accessible lecture summaries",
+      "draft_text": "Context: A university accessibility pilot.\nNeed: Make lecture content easier to review.\nUsers: Students who use assistive technology.\nData materials: Recorded lecture transcripts.\nConstraints: Publish each summary within 24 hours.\nExpected result: Plain-language lecture summaries.",
+      "answers": {
+        "How will you determine whether the result is successful for ‘Accessible lecture summaries’?": "At least 80% of surveyed students rate each summary easy to understand."
+      }
+    },
+    {
+      "id": "05-complete-russian",
+      "language": "Russian",
+      "topic": "Пилот наставничества",
+      "draft_text": "Контекст: Университет проводит пилот наставничества.\nПотребность: Помочь новым студентам освоиться.\nПользователи: Студенты первого курса и наставники.\nДанные: Список наставников и расписание встреч.\nОграничения: Не более трех подопечных на наставника.\nОжидаемый результат: План встреч на первый семестр.\nКритерии успеха: Не менее 80% участников завершают пилот.\nКонтактное лицо: Координатор программы.\nФормат взаимодействия: Еженедельные очные встречи.",
+      "answers": {}
+    }
+  ]
+}

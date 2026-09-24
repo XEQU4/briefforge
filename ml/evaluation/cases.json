@@ -1,0 +1,112 @@
+{
+  "cases": [
+    {
+      "id": "sparse-english-flow",
+      "topic": "Clinic appointment reminders",
+      "draft_text": "A dashboard could help clinic teams reduce missed appointments.",
+      "answers_by_field": {"users": "Clinic coordinators", "data_materials": "Weekly CSV appointment exports", "success_criteria": "Reduce missed appointments by 15%"},
+      "expected_fields": {"need": "A dashboard could help clinic teams reduce missed appointments.", "users": "Clinic coordinators", "data_materials": "Weekly CSV appointment exports", "success_criteria": "Reduce missed appointments by 15%"},
+      "expected_null_fields": ["context", "constraints", "expected_result"]
+    },
+    {
+      "id": "sparse-russian-flow",
+      "topic": "План занятий по робототехнике",
+      "draft_text": "Нужен план занятий для школьного кружка робототехники.",
+      "answers_by_field": {"users": "Ученики 7–9 классов", "data_materials": "Список наборов и расписание кабинета", "success_criteria": "Не менее 80% учеников завершают проект"},
+      "expected_fields": {"need": "Нужен план занятий для школьного кружка робототехники.", "users": "Ученики 7–9 классов", "data_materials": "Список наборов и расписание кабинета", "success_criteria": "Не менее 80% учеников завершают проект"},
+      "expected_null_fields": ["context", "constraints", "expected_result"]
+    },
+    {
+      "id": "english-labelled-placeholders",
+      "topic": "Volunteer scheduling",
+      "draft_text": "Need: Coordinate weekend shifts.\nUsers: TBD.\nSuccess criteria: not sure.",
+      "answers_by_field": {"users": "Community volunteers", "success_criteria": "At least 90% of shifts are filled"},
+      "expected_fields": {"need": "Coordinate weekend shifts.", "users": "Community volunteers", "success_criteria": "At least 90% of shifts are filled"},
+      "expected_null_fields": ["context", "data_materials", "constraints", "expected_result"]
+    },
+    {
+      "id": "russian-labelled-placeholders",
+      "topic": "Запись к школьному психологу",
+      "draft_text": "Потребность: Упростить запись на консультацию.\nПользователи: не знаю.\nКритерии успеха: уточним позже.",
+      "answers_by_field": {"users": "Ученики и их родители", "success_criteria": "Ожидание записи не более трех дней"},
+      "expected_fields": {"need": "Упростить запись на консультацию.", "users": "Ученики и их родители", "success_criteria": "Ожидание записи не более трех дней"},
+      "expected_null_fields": ["context", "data_materials", "constraints", "expected_result"]
+    },
+    {
+      "id": "meaningful-english-negative",
+      "topic": "Student survey",
+      "draft_text": "Need: Collect course feedback.\nConstraints: No personal data may be used.",
+      "answers_by_field": {},
+      "expected_fields": {"need": "Collect course feedback.", "constraints": "No personal data may be used."},
+      "expected_null_fields": ["context", "users", "data_materials", "expected_result", "success_criteria"]
+    },
+    {
+      "id": "meaningful-russian-negative",
+      "topic": "Планирование бюджета кружка",
+      "draft_text": "Потребность: Подготовить план закупок.\nОграничения: Бюджет отсутствует.",
+      "answers_by_field": {},
+      "expected_fields": {"need": "Подготовить план закупок.", "constraints": "Бюджет отсутствует."},
+      "expected_null_fields": ["context", "users", "data_materials", "expected_result", "success_criteria"]
+    },
+    {
+      "id": "complete-english-labelled-card",
+      "topic": "Library reading club",
+      "draft_text": "Context: A public library is launching a reading club.\nNeed: Plan the first season.\nUsers: Teen readers.\nData materials: Room schedule and book catalog.\nConstraints: Meet twice a month.\nExpected result: A 12-week session plan.\nSuccess criteria: At least 20 teens complete the season.",
+      "answers_by_field": {},
+      "expected_fields": {"context": "A public library is launching a reading club.", "need": "Plan the first season.", "users": "Teen readers.", "data_materials": "Room schedule and book catalog.", "constraints": "Meet twice a month.", "expected_result": "A 12-week session plan.", "success_criteria": "At least 20 teens complete the season."},
+      "expected_null_fields": []
+    },
+    {
+      "id": "complete-russian-labelled-card",
+      "topic": "Наставничество первокурсников",
+      "draft_text": "Контекст: Университет запускает пилот наставничества.\nПотребность: Помочь первокурсникам освоиться.\nПользователи: Студенты первого курса и наставники.\nДанные: Список наставников и расписание встреч.\nОграничения: Не более трех подопечных на наставника.\nОжидаемый результат: План встреч на семестр.\nКритерии успеха: 80% участников завершают пилот.",
+      "answers_by_field": {},
+      "expected_fields": {"context": "Университет запускает пилот наставничества.", "need": "Помочь первокурсникам освоиться.", "users": "Студенты первого курса и наставники.", "data_materials": "Список наставников и расписание встреч.", "constraints": "Не более трех подопечных на наставника.", "expected_result": "План встреч на семестр.", "success_criteria": "80% участников завершают пилот."},
+      "expected_null_fields": []
+    },
+    {
+      "id": "contact-does-not-leak",
+      "topic": "Community garden",
+      "draft_text": "Context: A neighborhood is planning a community garden.\nNeed: Coordinate a shared garden.\nUsers: Residents.\nData: Plot map.\nConstraints: No pesticides.\nExpected result: Planting plan.\nSuccess criteria: Every plot is assigned.",
+      "extra_question": "Who should be contacted to clarify questions about this task?",
+      "extra_answer": "Contact the garden coordinator at demo-contact@example.test",
+      "answers_by_field": {},
+      "expected_fields": {"context": "A neighborhood is planning a community garden.", "need": "Coordinate a shared garden.", "users": "Residents.", "data_materials": "Plot map.", "constraints": "No pesticides.", "expected_result": "Planting plan.", "success_criteria": "Every plot is assigned."},
+      "expected_null_fields": []
+    },
+    {
+      "id": "misleading-english-topic-keywords",
+      "topic": "Customer data requirements",
+      "draft_text": "We need a better onboarding process.",
+      "answers_by_field": {"users": "Support analysts", "data_materials": "Approved CSV exports", "success_criteria": "At least 90% of users complete onboarding"},
+      "expected_fields": {"need": "We need a better onboarding process.", "users": "Support analysts", "data_materials": "Approved CSV exports", "success_criteria": "At least 90% of users complete onboarding"},
+      "expected_null_fields": ["context", "constraints", "expected_result"]
+    },
+    {
+      "id": "misleading-russian-topic-keywords",
+      "topic": "Требования к данным пользователей",
+      "draft_text": "Нужен более понятный процесс адаптации.",
+      "answers_by_field": {"users": "Специалисты поддержки", "data_materials": "Утвержденные CSV-файлы", "success_criteria": "Не менее 90% пользователей завершают адаптацию"},
+      "expected_fields": {"need": "Нужен более понятный процесс адаптации.", "users": "Специалисты поддержки", "data_materials": "Утвержденные CSV-файлы", "success_criteria": "Не менее 90% пользователей завершают адаптацию"},
+      "expected_null_fields": ["context", "constraints", "expected_result"]
+    },
+    {
+      "id": "placeholder-phrase-inside-substantive-answer",
+      "topic": "Clinic data import",
+      "draft_text": "Need: Import weekly schedules.",
+      "answers_by_field": {"data_materials": "Not sure which formats yet; monthly CSV exports are available."},
+      "expected_fields": {"need": "Import weekly schedules.", "data_materials": "Not sure which formats yet; monthly CSV exports are available."},
+      "expected_null_fields": ["context", "users", "constraints", "expected_result", "success_criteria"]
+    },
+    {
+      "id": "unfamiliar-question-wording-fallback",
+      "topic": "Library staffing",
+      "draft_text": "Context: A city library is planning evening shifts.\nNeed: Prepare a staffing plan.\nUsers: Library staff.\nData: Existing shift calendar.\nConstraints: Keep the library open until 9 pm.\nExpected result: A revised shift calendar.\nSuccess criteria: All evening shifts are covered.",
+      "extra_question": "Whose daily routines are affected by the new arrangement?",
+      "extra_answer": "Evening librarians",
+      "answers_by_field": {},
+      "expected_fields": {"context": "A city library is planning evening shifts.", "need": "Prepare a staffing plan.", "users": "Library staff.", "data_materials": "Existing shift calendar.", "constraints": "Keep the library open until 9 pm.", "expected_result": "A revised shift calendar.", "success_criteria": "All evening shifts are covered."},
+      "expected_null_fields": []
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////data/app.db
+      ML_SERVICE_URL: http://ml:8001
+    volumes:
+      - backend-data:/data
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  ml:
+    build:
+      context: ./ML
+      dockerfile: Dockerfile
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    expose:
+      - "8001"
+    restart: unless-stopped
+
+volumes:
+  backend-data:
