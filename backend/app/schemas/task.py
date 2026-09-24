@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.domain.status import TaskStatus
+
 
 class TaskFields(BaseModel):
     title: str | None = None
@@ -31,13 +33,13 @@ class TaskCreate(BaseModel):
 
 
 class TaskUpdate(TaskFields):
-    status: str | None = None
+    model_config = ConfigDict(extra="forbid")
 
 
 class TaskRead(TaskFields):
     model_config = ConfigDict(from_attributes=True)
     id: int
-    status: str
+    status: TaskStatus
     rating_score: int
     rating_breakdown: dict[str, Any]
     readiness_level: str

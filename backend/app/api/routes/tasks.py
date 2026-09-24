@@ -4,14 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.db import commit_or_rollback, get_db
+from app.domain.status import TaskStatus
 from app.models import ClarifyingQuestion, Task
 from app.schemas import AnswersSubmit, TaskCreate, TaskRead, TaskUpdate, TaskWithQuestions
 from app.services.ai_client import GENERATED_CARD_FIELDS, build_card_from_answers, get_clarifying_questions
+from app.services.lifecycle import InvalidTransition, transition_task
 from app.services.rating import calculate_rating, readiness_for_score
 
 router = APIRouter(tags=["tasks"])
 
-TASK_STATUSES = {"draft", "clarifying", "card_ready", "confirmed"}
 SUGGESTIONS = {
     "context": "Describe the business context and current situation",
     "need": "State the specific need or problem to solve",
@@ -75,7 +76,7 @@ def _normalize_answers(questions: list[ClarifyingQuestion], incoming: list[str] 
 async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
     # Network work happens before the first database write.
     questions = await get_clarifying_questions(payload.draft_text, payload.topic)
-    task = Task(context=payload.draft_text, topic=payload.topic, status="clarifying", questions=[])
+    task = Task(context=payload.draft_text, topic=payload.topic, status=TaskStatus.CLARIFYING, questions=[])
     db.add(task)
     task.questions.extend(
         ClarifyingQuestion(question_text=question_text, order=index)
@@ -89,8 +90,11 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
 @router.patch("/tasks/{task_id}/answers", response_model=TaskRead)
 async def answer_task(task_id: int, payload: AnswersSubmit, db: AsyncSession = Depends(get_db)):
     task = await _get_task(task_id, db)
-    if task.status not in {"clarifying", "card_ready"}:
+    try:
+        next_status = transition_task(task.status, TaskStatus.CARD_READY)
+    except InvalidTransition:
         raise HTTPException(status_code=409, detail="Answers can only be submitted while the task is clarifying or card_ready")
+    task.status = next_status
     questions = sorted(task.questions, key=lambda q: q.order)
     answers_by_text = _normalize_answers(questions, payload.answers)
     question_texts = [question.question_text for question in questions]
@@ -105,7 +109,6 @@ async def answer_task(task_id: int, payload: AnswersSubmit, db: AsyncSession = D
             setattr(task, field, value)
     for question in questions:
         question.answer_text = answers_by_text[question.question_text]
-    task.status = "card_ready"
     await commit_or_rollback(db)
     return await _get_task(task.id, db)
 
@@ -114,15 +117,9 @@ async def answer_task(task_id: int, payload: AnswersSubmit, db: AsyncSession = D
 async def update_task(task_id: int, payload: TaskUpdate, db: AsyncSession = Depends(get_db)):
     task = await _get_task(task_id, db)
     updates = payload.model_dump(exclude_unset=True)
-    requested_status = updates.pop("status", None)
-    if requested_status is not None:
-        if requested_status not in TASK_STATUSES:
-            raise HTTPException(status_code=422, detail="Invalid task status")
-        if requested_status != task.status:
-            raise HTTPException(status_code=409, detail="Use the answers or confirm endpoint to change task status")
     for field, value in updates.items():
         setattr(task, field, value)
-    if updates and task.status == "confirmed":
+    if updates and task.status == TaskStatus.CONFIRMED:
         score, breakdown, _ = calculate_rating(task)
         task.rating_score = score
         task.rating_breakdown = breakdown
@@ -134,13 +131,15 @@ async def update_task(task_id: int, payload: TaskUpdate, db: AsyncSession = Depe
 @router.post("/tasks/{task_id}/confirm", response_model=TaskRead)
 async def confirm_task(task_id: int, db: AsyncSession = Depends(get_db)):
     task = await _get_task(task_id, db)
-    if task.status != "card_ready" and task.status != "confirmed":
+    try:
+        next_status = transition_task(task.status, TaskStatus.CONFIRMED)
+    except InvalidTransition:
         raise HTTPException(status_code=409, detail="Task must have an editable card before confirmation")
     score, breakdown, _ = calculate_rating(task)
     task.rating_score = score
     task.rating_breakdown = breakdown
     task.readiness_level = readiness_for_score(score)
-    task.status = "confirmed"
+    task.status = next_status
     await commit_or_rollback(db)
     return await _get_task(task.id, db)
 
@@ -159,7 +158,7 @@ async def list_tasks(topic: str | None = None, readiness_level: str | None = Non
         raise HTTPException(status_code=422, detail="sort must be 'rating'")
     if readiness_level is not None and readiness_level not in {"draft", "working", "ready", "priority"}:
         raise HTTPException(status_code=422, detail="Invalid readiness_level")
-    query = select(Task).where(Task.status == "confirmed")
+    query = select(Task).where(Task.status == TaskStatus.CONFIRMED)
     if topic:
         query = query.where(Task.topic == topic)
     if readiness_level:

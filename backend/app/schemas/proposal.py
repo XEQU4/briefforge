@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.domain.status import ProposalStatus
+
 
 class ProposalCreate(BaseModel):
     team_id: int
@@ -19,12 +21,12 @@ class ProposalCreate(BaseModel):
 
 
 class ProposalUpdate(BaseModel):
-    status: str = Field(pattern="^(pending|accepted|rejected)$")
+    status: ProposalStatus
 
 
 class ProposalRead(ProposalCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     task_id: int
-    status: str
+    status: ProposalStatus
     created_at: datetime | None = None

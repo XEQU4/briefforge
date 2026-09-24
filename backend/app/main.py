@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import proposals, tasks, teams
+from app.api.routes import health, proposals, tasks, teams
 from app.core import config
 
 
@@ -29,6 +29,7 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
             result.headers["X-Frame-Options"] = "DENY"
         return result
 
+    application.include_router(health.router)
     application.include_router(tasks.router)
     application.include_router(proposals.router)
     application.include_router(teams.router)

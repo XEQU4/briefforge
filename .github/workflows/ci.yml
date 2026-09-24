@@ -97,4 +97,6 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r requirements.txt
       - run: alembic upgrade head
+      - run: test "$(alembic heads | wc -l)" -eq 1
+      - run: alembic check
       - run: alembic current --verbose | tee alembic-current.txt && grep -q '(head)' alembic-current.txt

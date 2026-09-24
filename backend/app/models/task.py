@@ -1,9 +1,24 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import (
+    DateTime,
+    Enum as SqlEnum,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+from app.domain.status import TaskStatus
+
+
+def _enum_values(enum_type):
+    return [member.value for member in enum_type]
 
 
 class Task(Base):
@@ -21,11 +36,22 @@ class Task(Base):
     contact: Mapped[str | None] = mapped_column(String(500), nullable=True)
     interaction_format: Mapped[str | None] = mapped_column(String(500), nullable=True)
     topic: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False)
-    rating_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[TaskStatus] = mapped_column(
+        SqlEnum(
+            TaskStatus,
+            native_enum=False,
+            create_constraint=False,
+            values_callable=_enum_values,
+            length=30,
+        ),
+        default=TaskStatus.DRAFT,
+        nullable=False,
+        index=True,
+    )
+    rating_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
     rating_breakdown: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    readiness_level: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    readiness_level: Mapped[str] = mapped_column(String(20), default="draft", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     questions: Mapped[list["ClarifyingQuestion"]] = relationship(
@@ -38,6 +64,9 @@ class Task(Base):
 
 class ClarifyingQuestion(Base):
     __tablename__ = "clarifying_questions"
+    __table_args__ = (
+        UniqueConstraint("task_id", "order", name="uq_clarifying_questions_task_id_order"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)

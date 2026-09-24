@@ -15,11 +15,13 @@ _database_path = Path(_test_directory.name) / "isolated.sqlite3"
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_database_path.as_posix()}"
 
 from app.core import config  # noqa: E402
-from app.core.db import Base, engine  # noqa: E402
+from app.core.db import Base, SessionLocal, engine, get_db  # noqa: E402
+from app.domain.status import ProposalStatus, TaskStatus  # noqa: E402
 from app.main import app, create_app  # noqa: E402
 from app.models import ClarifyingQuestion, Proposal, Task, Team  # noqa: E402,F401
 from app.services import ai_client  # noqa: E402
 from app.services.rating import calculate_rating, readiness_for_score  # noqa: E402
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # noqa: E402
 from sqlalchemy import func, select  # noqa: E402
 
 
@@ -88,6 +90,134 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         data = response.json()
         self.assertGreaterEqual(len(data["questions"]), 3)
         return data
+
+    async def test_task_lifecycle_enums_and_status_patch_is_rejected(self):
+        created = await self.create_task()
+        task_id = created["task"]["id"]
+        self.assertEqual(created["task"]["status"], "clarifying")
+        self.assertIsInstance(TaskStatus(created["task"]["status"]), TaskStatus)
+
+        invalid = await self.client.post(f"/tasks/{task_id}/confirm", json={})
+        self.assertEqual(invalid.status_code, 409)
+
+        answered = await self.client.patch(
+            f"/tasks/{task_id}/answers", json={"answers": ["Need", "Users", "Success"]}
+        )
+        self.assertEqual(answered.status_code, 200, answered.text)
+        self.assertEqual(answered.json()["status"], "card_ready")
+
+        status_patch = await self.client.patch(
+            f"/tasks/{task_id}", json={"status": "confirmed"}
+        )
+        self.assertEqual(status_patch.status_code, 422)
+
+        confirmed = await self.client.post(f"/tasks/{task_id}/confirm", json={})
+        self.assertEqual(confirmed.status_code, 200, confirmed.text)
+        self.assertEqual(confirmed.json()["status"], "confirmed")
+        self.assertEqual(
+            (await self.client.post(f"/tasks/{task_id}/confirm", json={})).json()["status"],
+            "confirmed",
+        )
+
+        schemas = app.openapi()["components"]["schemas"]
+        self.assertEqual(
+            schemas["TaskStatus"]["enum"],
+            ["draft", "clarifying", "card_ready", "confirmed"],
+        )
+        self.assertEqual(
+            schemas["ProposalStatus"]["enum"], ["pending", "accepted", "rejected"]
+        )
+
+    async def test_proposal_terminal_transitions(self):
+        task = await self.create_task()
+        task_id = task["task"]["id"]
+        await self.client.patch(
+            f"/tasks/{task_id}/answers", json={"answers": ["Need", "Users", "Success"]}
+        )
+        await self.client.post(f"/tasks/{task_id}/confirm", json={})
+        team = await self.client.post("/teams", json={"name": "Lifecycle team"})
+        team_id = team.json()["id"]
+
+        async def submit_proposal(idea):
+            response = await self.client.post(
+                f"/tasks/{task_id}/proposals", json={"team_id": team_id, "idea": idea}
+            )
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertEqual(response.json()["status"], "pending")
+            self.assertEqual(ProposalStatus(response.json()["status"]), ProposalStatus.PENDING)
+            return response.json()["id"]
+
+        accepted_id = await submit_proposal("Accepted idea")
+        rejected_id = await submit_proposal("Rejected idea")
+        pending_noop = await self.client.patch(
+            f"/proposals/{accepted_id}", json={"status": "pending"}
+        )
+        self.assertEqual(pending_noop.status_code, 200)
+        accepted = await self.client.patch(
+            f"/proposals/{accepted_id}", json={"status": "accepted"}
+        )
+        rejected = await self.client.patch(
+            f"/proposals/{rejected_id}", json={"status": "rejected"}
+        )
+        self.assertEqual(accepted.json()["status"], "accepted")
+        self.assertEqual(rejected.json()["status"], "rejected")
+        self.assertEqual(
+            (await self.client.patch(f"/proposals/{accepted_id}", json={"status": "rejected"})).status_code,
+            409,
+        )
+        self.assertEqual(
+            (await self.client.patch(f"/proposals/{rejected_id}", json={"status": "accepted"})).status_code,
+            409,
+        )
+
+    async def test_clarifying_question_task_order_is_unique(self):
+        task = Task(context="Task", status=TaskStatus.CLARIFYING)
+        task.questions.extend(
+            [
+                ClarifyingQuestion(question_text="First", order=1),
+                ClarifyingQuestion(question_text="Duplicate", order=1),
+            ]
+        )
+        async with SessionLocal() as session:
+            session.add(task)
+            with self.assertRaises(IntegrityError):
+                await session.commit()
+            await session.rollback()
+
+    async def test_health_endpoints(self):
+        async def unexpected_db_dependency():
+            raise AssertionError("live health must not depend on the database")
+
+        app.dependency_overrides[get_db] = unexpected_db_dependency
+        try:
+            live = await self.client.get("/health/live")
+            self.assertEqual(live.status_code, 200)
+            self.assertEqual(live.json(), {"status": "ok"})
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+        ready = await self.client.get("/health/ready")
+        self.assertEqual(ready.status_code, 200, ready.text)
+        self.assertEqual(ready.json(), {"status": "ready", "database": "ok"})
+
+        class BrokenSession:
+            async def execute(self, _statement):
+                raise SQLAlchemyError(
+                    "postgresql+asyncpg://user:secret@host/db SELECT secret_table"
+                )
+
+        async def failing_db():
+            yield BrokenSession()
+
+        app.dependency_overrides[get_db] = failing_db
+        try:
+            failed = await self.client.get("/health/ready")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+        self.assertEqual(failed.status_code, 503)
+        self.assertEqual(failed.json(), {"detail": "Database unavailable"})
+        for sensitive_value in ("postgresql", "secret", "SELECT", "secret_table"):
+            self.assertNotIn(sensitive_value, failed.text)
 
     async def test_topic_adaptation_override_and_create_serialization(self):
         data = await self.create_task(topic=None)

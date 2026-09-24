@@ -1,7 +1,17 @@
 # API contract
 
-All JSON responses use the fields shown below. `status` is one of `draft`, `clarifying`, `card_ready`, `confirmed`; proposal status is `pending`, `accepted`, or `rejected`.
+All JSON responses use the fields shown below. `TaskStatus` is one of `draft`, `clarifying`, `card_ready`, `confirmed`; `ProposalStatus` is one of `pending`, `accepted`, or `rejected`. Status values are lowercase strings.
 `readiness_level` is one of `draft` (0–39), `working` (40–69), `ready` (70–89), or `priority` (90–100).
+
+## Health
+
+### `GET /health/live`
+
+Returns `{ "status": "ok" }` without querying the database or external services.
+
+### `GET /health/ready`
+
+Runs a lightweight database query. Returns `{ "status": "ready", "database": "ok" }` when PostgreSQL is reachable, or a controlled `503` response when it is unavailable.
 
 ## Tasks
 
@@ -19,7 +29,7 @@ Response: `Task` with the generated editable card and `card_ready` status.
 
 ### `PATCH /tasks/{id}`
 
-Request: any subset of card fields (`title`, `context`, `need`, `users`, `data_materials`, `constraints`, `expected_result`, `success_criteria`, `contact`, `interaction_format`, `topic`) and optionally `status`.
+Request: any subset of editable card fields (`title`, `context`, `need`, `users`, `data_materials`, `constraints`, `expected_result`, `success_criteria`, `contact`, `interaction_format`, `topic`). Task status cannot be changed through this endpoint.
 
 Response: `Task`.
 
@@ -28,6 +38,8 @@ Response: `Task`.
 Request: `{}`
 
 Response: `Task` with recalculated `rating_score`, `rating_breakdown`, `readiness_level`, and `confirmed` status.
+
+Task lifecycle transitions are `draft` → `clarifying` → `card_ready` → `confirmed`. Task creation continues to start at `clarifying`; confirmation requires `card_ready`. Reconfirming an already confirmed task is idempotent.
 
 ### `GET /tasks/{id}/rating`
 
@@ -60,6 +72,8 @@ Response: `[Proposal]`.
 Request: `{ "status": "pending|accepted|rejected" }`
 
 Response: `Proposal`. This endpoint only changes a manually supplied status and never assigns a team automatically.
+
+Proposal lifecycle transitions are `pending` → `accepted` or `pending` → `rejected`. Repeating `pending` is idempotent; `accepted` and `rejected` are terminal.
 
 `Proposal`: `{ "id": 1, "task_id": 1, "team_id": 1, "idea": "string", "plan": "string|null", "deadline": "string|null", "link": "string|null", "status": "pending", "created_at": "datetime|null" }`
 

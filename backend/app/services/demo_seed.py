@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import SessionLocal, commit_or_rollback
+from app.domain.status import ProposalStatus, TaskStatus
 from app.models import ClarifyingQuestion, DemoSeedManifest, Proposal, Task, Team
 from app.services.rating import calculate_rating, readiness_for_score
 
@@ -15,8 +16,8 @@ CREATED_COUNTS = {"tasks": 13, "confirmed_tasks": 8, "drafts": 5, "teams": 5, "p
 
 async def current_counts(db: AsyncSession) -> dict:
     tasks = int((await db.scalar(select(func.count()).select_from(Task))) or 0)
-    confirmed = int((await db.scalar(select(func.count()).select_from(Task).where(Task.status == "confirmed"))) or 0)
-    drafts = int((await db.scalar(select(func.count()).select_from(Task).where(Task.status != "confirmed"))) or 0)
+    confirmed = int((await db.scalar(select(func.count()).select_from(Task).where(Task.status == TaskStatus.CONFIRMED))) or 0)
+    drafts = int((await db.scalar(select(func.count()).select_from(Task).where(Task.status != TaskStatus.CONFIRMED))) or 0)
     teams = int((await db.scalar(select(func.count()).select_from(Team))) or 0)
     proposals = int((await db.scalar(select(func.count()).select_from(Proposal))) or 0)
     return {"tasks": tasks, "confirmed_tasks": confirmed, "drafts": drafts, "teams": teams, "proposals": proposals}
@@ -81,7 +82,7 @@ def _drafts():
         ["Какую проблему нужно решить?", "С кем команде взаимодействовать?", "Что будет считаться успехом?"],
     ]
     return [Task(title=f"Черновик: демо-задача {i}", context=description, topic=topics[i - 1],
-                 status="clarifying", questions=[])
+                 status=TaskStatus.CLARIFYING, questions=[])
             for i, description in enumerate(descriptions, 1)], question_sets
 
 
@@ -108,7 +109,7 @@ def _cards():
         for index, field in enumerate(optional):
             if index >= keep_count:
                 values[field] = None
-        task = Task(**values, status="confirmed")
+        task = Task(**values, status=TaskStatus.CONFIRMED)
         task.rating_score, task.rating_breakdown, _ = calculate_rating(task)
         task.readiness_level = readiness_for_score(task.rating_score)
         result.append(task)
@@ -129,5 +130,5 @@ def _proposals(cards, teams):
     return [Proposal(task=cards[index % 8], team=teams[index % 5],
                      idea=f"Предложение команды {teams[index % 5].name}: прототип сценария {index + 1}.",
                      plan="Исследование, прототипирование, проверка на синтетическом примере",
-                     deadline="3 недели", link=f"https://example.com/demo-prototype-{index + 1}", status="pending")
+                     deadline="3 недели", link=f"https://example.com/demo-prototype-{index + 1}", status=ProposalStatus.PENDING)
             for index in range(10)]
