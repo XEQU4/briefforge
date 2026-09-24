@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,19 +14,21 @@ _test_directory = tempfile.TemporaryDirectory(prefix="warspaceman-backend-tests-
 atexit.register(_test_directory.cleanup)
 _database_path = Path(_test_directory.name) / "isolated.sqlite3"
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_database_path.as_posix()}"
+os.environ.setdefault("SESSION_COOKIE_SECURE", "false")
 
 from app.core import config  # noqa: E402
 from app.core.db import Base, SessionLocal, engine, get_db  # noqa: E402
 from app.domain.status import ProposalStatus, TaskStatus  # noqa: E402
 from app.main import app, create_app  # noqa: E402
 from app.models import (  # noqa: E402,F401
-    ClarifyingQuestion, Organization, OrganizationMember, OrganizationMemberRole,
+    AuthSession, ClarifyingQuestion, Organization, OrganizationMember, OrganizationMemberRole,
     Proposal, Task, Team, TeamMember, TeamMemberRole, User,
 )
 from app.services import ai_client  # noqa: E402
 from app.services.rating import calculate_rating, readiness_for_score  # noqa: E402
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # noqa: E402
 from sqlalchemy import delete, func, select  # noqa: E402
+from app.services.auth_security import hash_password, hash_session_value, utcnow_naive  # noqa: E402
 
 
 QUESTIONS = [
@@ -594,6 +597,170 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         async with SessionLocal() as session:
             for model in (DemoSeedManifest, Task, Team, Proposal):
                 self.assertEqual(await session.scalar(select(func.count()).select_from(model)), 0)
+
+    async def test_auth_registration_hashes_credentials_and_returns_only_public_user(self):
+        weak_password = "zebra123"
+        weak = await self.client.post("/auth/register", json={"email": "weak@example.com", "password": weak_password})
+        self.assertEqual(weak.status_code, 422)
+        self.assertNotIn(weak_password, weak.text)
+        whitespace = await self.client.post(
+            "/auth/register", json={"email": "spaces@example.com", "password": "           "}
+        )
+        self.assertEqual(whitespace.status_code, 422)
+        self.assertNotIn("           ", whitespace.text)
+
+        password = "correct horse battery staple"
+        response = await self.client.post(
+            "/auth/register",
+            json={"email": "  PERSON@Example.COM ", "password": password, "display_name": "Person"},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        public_user = response.json()
+        self.assertEqual(public_user["email"], "person@example.com")
+        self.assertEqual(set(public_user), {"id", "email", "display_name", "created_at", "updated_at"})
+        self.assertNotIn(password, response.text)
+        self.assertNotIn("password_hash", response.text)
+
+        cookies = response.headers.get_list("set-cookie")
+        session_cookie = next(item for item in cookies if item.startswith(config.SESSION_COOKIE_NAME + "="))
+        csrf_cookie = next(item for item in cookies if item.startswith(config.CSRF_COOKIE_NAME + "="))
+        self.assertIn("httponly", session_cookie.lower())
+        self.assertIn("samesite=lax", session_cookie.lower())
+        self.assertIn("path=/", session_cookie.lower())
+        self.assertNotIn("httponly", csrf_cookie.lower())
+        self.assertIn("samesite=lax", csrf_cookie.lower())
+        self.assertIn("max-age=604800", session_cookie.lower())
+
+        raw_session = self.client.cookies.get(config.SESSION_COOKIE_NAME)
+        csrf_token = self.client.cookies.get(config.CSRF_COOKIE_NAME)
+        async with SessionLocal() as session:
+            user = await session.scalar(select(User).where(User.id == public_user["id"]))
+            auth_session = await session.scalar(select(AuthSession).where(AuthSession.user_id == user.id))
+            self.assertTrue(user.password_hash.startswith("$argon2id$"))
+            self.assertNotEqual(user.password_hash, password)
+            self.assertEqual(auth_session.token_hash, hash_session_value(raw_session))
+            self.assertNotEqual(auth_session.token_hash, raw_session)
+            self.assertEqual(auth_session.csrf_token_hash, hash_session_value(csrf_token))
+        self.assertNotIn(raw_session, response.text)
+
+        duplicate = await self.client.post(
+            "/auth/register",
+            json={"email": "person@example.com", "password": password},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+
+    async def test_auth_login_generic_errors_and_inactive_user_rejection(self):
+        password = "a valid sample password"
+        async with SessionLocal() as session:
+            active = User(email="active@example.com", password_hash=hash_password(password))
+            inactive = User(email="inactive@example.com", password_hash=hash_password(password), is_active=False)
+            legacy = User(email="legacy@example.com", password_hash=None)
+            session.add_all([active, inactive, legacy])
+            await session.commit()
+
+        valid = await self.client.post("/auth/login", json={"email": "ACTIVE@example.com", "password": password})
+        self.assertEqual(valid.status_code, 200, valid.text)
+        self.assertEqual(valid.json()["email"], "active@example.com")
+        self.assertNotIn("password_hash", valid.text)
+        csrf = self.client.cookies.get(config.CSRF_COOKIE_NAME)
+        valid_session_token = self.client.cookies.get(config.SESSION_COOKIE_NAME)
+        async with SessionLocal() as session:
+            user = await session.scalar(select(User).where(User.email == "active@example.com"))
+            self.assertIsNotNone(user.last_login_at)
+            self.assertIsNotNone(await session.scalar(select(AuthSession).where(AuthSession.token_hash == hash_session_value(valid_session_token))))
+
+        wrong = await self.client.post(
+            "/auth/login", json={"email": "active@example.com", "password": "wrong password"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        unknown = await self.client.post(
+            "/auth/login", json={"email": "unknown@example.com", "password": "wrong password"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        inactive = await self.client.post(
+            "/auth/login", json={"email": "inactive@example.com", "password": password},
+            headers={"X-CSRF-Token": csrf},
+        )
+        legacy = await self.client.post(
+            "/auth/login", json={"email": "legacy@example.com", "password": password},
+            headers={"X-CSRF-Token": csrf},
+        )
+        for result in (wrong, unknown, inactive, legacy):
+            self.assertEqual(result.status_code, 401)
+            self.assertEqual(result.json(), {"detail": "Invalid email or password"})
+
+    async def test_auth_me_rejects_expired_revoked_inactive_and_malformed_sessions(self):
+        password = "another valid password"
+        async with SessionLocal() as session:
+            user = User(email="session@example.com", password_hash=hash_password(password))
+            session.add(user)
+            await session.flush()
+            expired = AuthSession(
+                user_id=user.id, token_hash=hash_session_value("expired-token"), csrf_token_hash=hash_session_value("expired-csrf"),
+                expires_at=utcnow_naive() - timedelta(seconds=1),
+            )
+            revoked = AuthSession(
+                user_id=user.id, token_hash=hash_session_value("revoked-token"), csrf_token_hash=hash_session_value("revoked-csrf"),
+                expires_at=utcnow_naive() + timedelta(hours=1), revoked_at=utcnow_naive(),
+            )
+            active = AuthSession(
+                user_id=user.id, token_hash=hash_session_value("inactive-token"), csrf_token_hash=hash_session_value("inactive-csrf"),
+                expires_at=utcnow_naive() + timedelta(hours=1),
+            )
+            session.add_all([expired, revoked, active])
+            await session.commit()
+
+        for token in ("expired-token", "revoked-token"):
+            result = await self.client.get("/auth/me", cookies={config.SESSION_COOKIE_NAME: token})
+            self.assertEqual(result.status_code, 401)
+        self.client.cookies.set(config.SESSION_COOKIE_NAME, "%%% malformed")
+        malformed = await self.client.get("/auth/me")
+        self.assertEqual(malformed.status_code, 401)
+
+        self.client.cookies.set(config.SESSION_COOKIE_NAME, "inactive-token")
+        self.client.cookies.set(config.CSRF_COOKIE_NAME, "inactive-csrf")
+        self.assertEqual((await self.client.get("/auth/me")).status_code, 200)
+        async with SessionLocal() as session:
+            user = await session.scalar(select(User).where(User.email == "session@example.com"))
+            user.is_active = False
+            await session.commit()
+        self.assertEqual((await self.client.get("/auth/me")).status_code, 401)
+
+    async def test_auth_logout_revokes_and_clears_cookies_idempotently(self):
+        response = await self.client.post(
+            "/auth/register", json={"email": "logout@example.com", "password": "a safe logout password"}
+        )
+        self.assertEqual(response.status_code, 201)
+        raw_session = self.client.cookies.get(config.SESSION_COOKIE_NAME)
+        csrf = self.client.cookies.get(config.CSRF_COOKIE_NAME)
+        logout = await self.client.post("/auth/logout", headers={"X-CSRF-Token": csrf})
+        self.assertEqual(logout.status_code, 204)
+        async with SessionLocal() as session:
+            auth_session = await session.scalar(select(AuthSession).where(AuthSession.token_hash == hash_session_value(raw_session)))
+            self.assertIsNotNone(auth_session.revoked_at)
+        self.assertIsNone(self.client.cookies.get(config.SESSION_COOKIE_NAME))
+        self.assertIsNone(self.client.cookies.get(config.CSRF_COOKIE_NAME))
+        self.assertEqual((await self.client.get("/auth/me")).status_code, 401)
+        self.assertEqual((await self.client.post("/auth/logout")).status_code, 204)
+
+    async def test_csrf_protection_applies_only_to_valid_cookie_sessions(self):
+        registered = await self.client.post(
+            "/auth/register", json={"email": "csrf@example.com", "password": "a csrf test password"}
+        )
+        self.assertEqual(registered.status_code, 201)
+        csrf = self.client.cookies.get(config.CSRF_COOKIE_NAME)
+
+        blocked = await self.client.post("/teams", json={"name": "Blocked"})
+        self.assertEqual(blocked.status_code, 403)
+        wrong = await self.client.post("/teams", json={"name": "Wrong"}, headers={"X-CSRF-Token": "wrong"})
+        self.assertEqual(wrong.status_code, 403)
+        allowed = await self.client.post("/teams", json={"name": "Allowed"}, headers={"X-CSRF-Token": csrf})
+        self.assertEqual(allowed.status_code, 201, allowed.text)
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as anonymous:
+            public = await anonymous.post("/teams", json={"name": "Still public"})
+            self.assertEqual(public.status_code, 201, public.text)
 
     async def _admin_request(self, application):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url="http://testserver") as client:

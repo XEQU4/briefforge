@@ -13,6 +13,40 @@ Returns `{ "status": "ok" }` without querying the database or external services.
 
 Runs a lightweight database query. Returns `{ "status": "ready", "database": "ok" }` when PostgreSQL is reachable, or a controlled `503` response when it is unavailable.
 
+## Authentication
+
+Authentication uses an opaque server-side session. The browser receives the `briefforge_session` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, configured lifetime); PostgreSQL stores only its SHA-256 hash. The `Secure` attribute is controlled by `SESSION_COOKIE_SECURE` and must be enabled behind HTTPS in production. Responses from `/auth/*` are not cacheable. Public user responses contain only `id`, `email`, `display_name`, `created_at`, and `updated_at`.
+
+For cookie-authenticated unsafe requests, send `X-CSRF-Token` with the value of the separate `briefforge_csrf` cookie. This CSRF cookie is `SameSite=Lax`, `Path=/`, and intentionally readable by browser code; its value is random, and only its hash is stored with the session. The server requires the header, CSRF cookie, and stored hash to match. `GET`, `HEAD`, and `OPTIONS` are exempt. This is a synchronizer-token check; CORS is not used as CSRF protection.
+
+### `POST /auth/register`
+
+Request: `{ "email": "person@example.com", "password": "at least 10 characters", "display_name": "Name|null" }`
+
+Creates a user and session, sets both cookies, and returns the public user with status `201`. Email is normalized. Passwords must be 10–128 characters and not whitespace-only. Duplicate email returns `409`; request validation errors do not echo submitted password values.
+
+Example response (`201`): `{ "id": 1, "email": "person@example.com", "display_name": "Name", "created_at": "datetime", "updated_at": "datetime" }`.
+
+### `POST /auth/login`
+
+Request: `{ "email": "person@example.com", "password": "..." }`
+
+On success, creates a session, updates `last_login_at`, sets both cookies, and returns the public user. Unknown email, incorrect password, inactive user, and users without a password hash all return the same generic `401` response.
+
+Example error (`401`): `{ "detail": "Invalid email or password" }`.
+
+### `POST /auth/logout`
+
+Revokes the session if one is present and clears both cookies. Repeated logout is safe. With an active session cookie, the CSRF header is required.
+
+### `GET /auth/me`
+
+Returns the public user for an active, non-expired session. Missing, malformed, expired, revoked, or inactive sessions return `401`.
+
+Example error (`401`): `{ "detail": "Authentication required" }`.
+
+`SESSION_TTL_SECONDS` defaults to seven days. Sessions do not slide. Existing users created before local-password authentication have a nullable `password_hash` and cannot log in until a password is established through a future account-recovery/password-setting flow; no password is invented during migration. Existing task/team/proposal endpoints remain unauthenticated in this phase. Object-level authorization is deferred.
+
 ## Tasks
 
 ### `POST /tasks`

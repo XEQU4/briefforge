@@ -6,5 +6,6 @@ from app.models.user import User
 from app.models.organization import Organization
 from app.models.organization_member import OrganizationMember, OrganizationMemberRole
 from app.models.team_member import TeamMember, TeamMemberRole
+from app.models.auth_session import AuthSession
 
-__all__ = ["Task", "ClarifyingQuestion", "Team", "Proposal", "DemoSeedManifest", "User", "Organization", "OrganizationMember", "OrganizationMemberRole", "TeamMember", "TeamMemberRole"]
+__all__ = ["Task", "ClarifyingQuestion", "Team", "Proposal", "DemoSeedManifest", "User", "Organization", "OrganizationMember", "OrganizationMemberRole", "TeamMember", "TeamMemberRole", "AuthSession"]

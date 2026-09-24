@@ -1,3 +1,3 @@
-from app.api.routes import proposals, tasks, teams
+from app.api.routes import auth, proposals, tasks, teams
 
-__all__ = ["tasks", "proposals", "teams"]
+__all__ = ["auth", "tasks", "proposals", "teams"]

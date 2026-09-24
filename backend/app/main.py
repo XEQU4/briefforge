@@ -1,8 +1,15 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import hmac
 
-from app.api.routes import health, proposals, tasks, teams
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from app.api.routes import auth, health, proposals, tasks, teams
 from app.core import config
+from app.core.db import SessionLocal
+from app.services.auth_security import hash_session_value, load_active_session
 
 
 def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) -> FastAPI:
@@ -23,13 +30,47 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
     @application.middleware("http")
     async def demo_security_headers(request, call_next):
         result = await call_next(request)
+        if request.url.path.startswith("/auth/"):
+            result.headers["Cache-Control"] = "no-store"
+            result.headers["X-Content-Type-Options"] = "nosniff"
         if request.url.path == "/admin/demo" or request.url.path.startswith("/admin/demo/"):
             result.headers["Cache-Control"] = "no-store"
             result.headers["X-Content-Type-Options"] = "nosniff"
             result.headers["X-Frame-Options"] = "DENY"
         return result
 
+    @application.middleware("http")
+    async def csrf_protection(request: Request, call_next):
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            raw_session = request.cookies.get(config.SESSION_COOKIE_NAME)
+            if raw_session:
+                async with SessionLocal() as db:
+                    active = await load_active_session(db, raw_session)
+                    if active is not None:
+                        session, _user = active
+                        csrf_cookie = request.cookies.get(config.CSRF_COOKIE_NAME, "")
+                        csrf_header = request.headers.get("X-CSRF-Token", "")
+                        if (
+                            not csrf_cookie
+                            or not csrf_header
+                            or not hmac.compare_digest(csrf_cookie, csrf_header)
+                            or not hmac.compare_digest(hash_session_value(csrf_header), session.csrf_token_hash)
+                        ):
+                            return JSONResponse(status_code=403, content={"detail": "CSRF validation failed"})
+        return await call_next(request)
+
+    @application.exception_handler(RequestValidationError)
+    async def safe_validation_errors(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/auth/"):
+            errors = [
+                {key: value for key, value in error.items() if key not in {"input", "ctx", "url"}}
+                for error in exc.errors()
+            ]
+            return JSONResponse(status_code=422, content={"detail": errors})
+        return await request_validation_exception_handler(request, exc)
+
     application.include_router(health.router)
+    application.include_router(auth.router)
     application.include_router(tasks.router)
     application.include_router(proposals.router)
     application.include_router(teams.router)
