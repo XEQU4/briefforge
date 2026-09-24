@@ -1,4 +1,32 @@
 services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-briefforge}
+      POSTGRES_USER: ${POSTGRES_USER:-briefforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-briefforge_local_dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-briefforge}:${POSTGRES_PASSWORD:-briefforge_local_dev}@postgres:5432/${POSTGRES_DB:-briefforge}}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   frontend:
     build:
       context: ./frontend
@@ -16,10 +44,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: sqlite+aiosqlite:////data/app.db
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-briefforge}:${POSTGRES_PASSWORD:-briefforge_local_dev}@postgres:5432/${POSTGRES_DB:-briefforge}}
       ML_SERVICE_URL: http://ml:8001
-    volumes:
-      - backend-data:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     expose:
       - "8000"
     restart: unless-stopped
@@ -36,4 +65,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  backend-data:
+  postgres-data:

@@ -383,6 +383,25 @@ Never commit real API keys.
 
 ## Development checks
 
+Docker Compose uses PostgreSQL as the primary local development database.
+`docker compose up --build -d` starts PostgreSQL and runs the one-shot
+`migrate` service (`alembic upgrade head`) before starting the backend. The
+PostgreSQL data is kept in the `postgres-data` named volume.
+
+To run migrations manually, from the repository root:
+
+```sh
+docker compose run --rm migrate
+```
+
+Or from `backend/` with `DATABASE_URL` configured:
+
+```sh
+alembic upgrade head
+alembic current
+alembic history
+```
+
 Run each command from its service directory:
 
 Backend (`backend/`):

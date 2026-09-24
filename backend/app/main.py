@@ -1,17 +1,8 @@
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import proposals, tasks, teams
 from app.core import config
-from app.core.db import init_db
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    await init_db()
-    yield
 
 
 def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) -> FastAPI:
@@ -19,7 +10,7 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
     token = config.DEMO_ADMIN_TOKEN if demo_token is None else demo_token
     from app.core.config import valid_demo_admin_token
 
-    application = FastAPI(title="BriefForge API", lifespan=lifespan)
+    application = FastAPI(title="BriefForge API")
     application.state.demo_admin_token = token
     application.add_middleware(
         CORSMiddleware,

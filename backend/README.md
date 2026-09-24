@@ -9,6 +9,11 @@ python -m pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+Before starting locally, apply the schema with `alembic upgrade head`. The
+default `DATABASE_URL` is an isolated SQLite file; set it to a PostgreSQL URL
+to use the Docker development database or another PostgreSQL instance. The
+application does not create or upgrade tables on startup.
+
 The ML service defaults to `http://localhost:8001`, matching `ml/README.md`.
 Set `ML_SERVICE_URL` to override that address, for example
 `$env:ML_SERVICE_URL = 'http://127.0.0.1:8001'` in PowerShell or
@@ -58,7 +63,8 @@ started separately from `ml/` for a live integration check.
 - The backend deliberately does not infer card fields for nonstandard
   clarification questions when ML is unavailable.
 - Existing nonempty card fields are preserved without recording their origin.
-- The SQLite schema is created with `create_all`; no migration system is used.
+- Schema changes are managed with Alembic migrations. SQLite remains available
+  for isolated backend tests; the Docker development stack uses PostgreSQL.
 
 ## Private local demo admin
 

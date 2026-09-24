@@ -41,8 +41,6 @@ CARD = {
 
 class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.lifespan = app.router.lifespan_context(app)
-        await self.lifespan.__aenter__()
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.drop_all)
             await connection.run_sync(Base.metadata.create_all)
@@ -58,7 +56,6 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def _async_cleanup(self):
         self.ml_patch.stop()
         await self.client.aclose()
-        await self.lifespan.__aexit__(None, None, None)
         await engine.dispose()
 
     def _ml_client(self, timeout):

@@ -25,10 +25,3 @@ async def commit_or_rollback(session: AsyncSession) -> None:
     except Exception:
         await session.rollback()
         raise
-
-
-async def init_db() -> None:
-    from app.models import ClarifyingQuestion, Proposal, Task, Team  # noqa: F401
-
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)

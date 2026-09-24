@@ -14,6 +14,8 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 COPY app ./app
 COPY tests ./tests
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 
 USER appuser
 EXPOSE 8000
