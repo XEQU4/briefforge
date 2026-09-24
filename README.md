@@ -381,6 +381,35 @@ Never commit real API keys.
 
 # Verification
 
+## Development checks
+
+Run each command from its service directory:
+
+Backend (`backend/`):
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+Frontend (`frontend/`):
+
+```sh
+npm ci
+npm run build
+```
+
+ML (`ml/`):
+
+```sh
+python -m pytest
+```
+
+Compose validation (repository root):
+
+```sh
+docker compose config --quiet
+```
+
 ## Backend Regression Tests
 
 The backend regression suite was executed inside the Docker Linux environment:
