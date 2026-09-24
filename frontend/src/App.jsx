@@ -29,7 +29,7 @@ export default function App() {
         <nav className="topbar" aria-label="Main navigation">
           <button className="brand" type="button" onClick={openCatalog} aria-label="Open task catalog">
             <span className="brand-mark" aria-hidden="true"><span /></span>
-            <span className="brand-copy"><strong>Warspaceman</strong><small>Business Task Catalog</small></span>
+            <span className="brand-copy"><strong>BriefForge</strong><small>Business Task Catalog</small></span>
           </button>
 
           <div className="nav-links" aria-label="Product navigation">

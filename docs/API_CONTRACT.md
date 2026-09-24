@@ -78,7 +78,7 @@ Response: `[Team]`.
 `Team`: `{ "id": 1, "name": "string", "interests": "string|null", "skills": "string|null", "technologies": "string|null" }`
 # ML service API
 
-Base URL: `http://localhost:8001` when running the ML service locally (`cd ML && uvicorn service.main:app --reload --port 8001`). Both endpoints accept and return JSON. Unknown card fields are `null`. A `X-Generation-Mode` response header is `openai` when extraction used the configured OpenAI API and `rule-based-stub` when it did not. Stub responses also include `X-Generation-Notice` explaining that no API key is configured. The service never supplies unsupported facts: extracted card values must be present in the draft or in a submitted answer.
+Base URL: `http://localhost:8001` when running the ML service locally (`cd ml && uvicorn service.main:app --reload --port 8001`). Both endpoints accept and return JSON. Unknown card fields are `null`. A `X-Generation-Mode` response header is `openai` when extraction used the configured OpenAI API and `rule-based-stub` when it did not. Stub responses also include `X-Generation-Notice` explaining that no API key is configured. The service never supplies unsupported facts: extracted card values must be present in the draft or in a submitted answer.
 
 ## `POST /generate-questions`
 

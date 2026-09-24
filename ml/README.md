@@ -12,13 +12,13 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 ```
 
-Put the OpenAI key in `ML/.env` as `OPENAI_API_KEY=...`; this is the only file you need to edit. The local `.env.example` uses the nonfunctional placeholder `PASTE_YOUR_OPENAI_API_KEY_HERE`, which selects the rule-based fallback. `ML/.env` is ignored by Git. The service reads `.env` relative to `service/main.py`, regardless of the current directory. Existing shell environment variables take precedence over `.env`; clear a shell `OPENAI_API_KEY` override if you want the file value to take effect. `OPENAI_MODEL` is also read there and defaults to `gpt-4o-mini`. Empty and recognized placeholder values select the fallback; any other nonempty value selects the OpenAI path, and the provider determines whether it is valid. Provider errors for a configured value return controlled HTTP errors instead of switching modes.
+Put the OpenAI key in `ml/.env` as `OPENAI_API_KEY=...`; this is the only file you need to edit. The local `.env.example` uses the nonfunctional placeholder `PASTE_YOUR_OPENAI_API_KEY_HERE`, which selects the rule-based fallback. `ml/.env` is ignored by Git. The service reads `.env` relative to `service/main.py`, regardless of the current directory. Existing shell environment variables take precedence over `.env`; clear a shell `OPENAI_API_KEY` override if you want the file value to take effect. `OPENAI_MODEL` is also read there and defaults to `gpt-4o-mini`. Empty and recognized placeholder values select the fallback; any other nonempty value selects the OpenAI path, and the provider determines whether it is valid. Provider errors for a configured value return controlled HTTP errors instead of switching modes.
 
 The service works without a configured API key using its labelled rule-based fallback. That fallback recognizes explicitly labelled fields, the service's generated question templates, and unambiguous question wording; unfamiliar or ambiguous answer questions are left unmapped. It returns exactly three distinct questions, prioritizing labelled fields that are missing or contain placeholders. Whole-answer placeholders such as `TBD`, `not sure`, `не знаю`, `пока неизвестно`, and `уточним позже` count as unknown. This is deliberately conservative: a substantive answer containing one of those phrases is retained, and meaningful negatives such as “No personal data may be used” remain data. Answers in `/form-card` must be keyed by their exact question text.
 
 ## Launch
 
-From `ML/`:
+From `ml/`:
 
 ```sh
 uvicorn service.main:app --reload --port 8001
@@ -26,11 +26,11 @@ uvicorn service.main:app --reload --port 8001
 
 The API is available at `http://localhost:8001`; interactive API docs are at `http://localhost:8001/docs`. Responses include `X-Generation-Mode: openai` or `X-Generation-Mode: rule-based-stub`. Stub responses also include `X-Generation-Notice`.
 
-After changing `ML/.env`, stop the running service and launch it again with the command above so it reads the updated configuration.
+After changing `ml/.env`, stop the running service and launch it again with the command above so it reads the updated configuration.
 
 ## Tests
 
-From `ML/`, run:
+From `ml/`, run:
 
 ```sh
 python -m pytest
@@ -46,7 +46,7 @@ The offline evaluator loads 13 synthetic cases from `evaluation/cases.json`, exe
 
 ## Optional live evaluation
 
-With the local service running and a real key configured, run from `ML/`:
+With the local service running and a real key configured, run from `ml/`:
 
 ```sh
 python scripts/live_smoke_test.py

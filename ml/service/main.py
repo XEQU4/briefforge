@@ -16,13 +16,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 def _load_service_environment(dotenv_path: str | Path = ENV_FILE) -> None:
-    """Load ML/.env without overriding variables supplied by the shell."""
+    """Load ml/.env without overriding variables supplied by the shell."""
     load_dotenv(dotenv_path=dotenv_path, override=False)
 
 
 _load_service_environment()
 
-app = FastAPI(title="Warspaceman ML service", version="1.0.0")
+app = FastAPI(title="BriefForge ML service", version="1.0.0")
 
 CARD_FIELDS = (
     "context",

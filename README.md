@@ -1,10 +1,10 @@
-# Warspaceman — Business Task Readiness Platform
+# BriefForge
 
 > **Turn a vague business request into a clear, rated, student-ready challenge.**
 
-Warspaceman is a 5-hour hackathon MVP that helps businesses transform incomplete problem descriptions into structured challenges that student teams can understand and choose. The platform uses AI-assisted clarification, creates an editable task card, calculates a transparent readiness score from 0 to 100, publishes confirmed challenges to a shared catalog, and lets businesses manually review student proposals.
+BriefForge is an AI-assisted platform that turns vague business needs into structured, rated challenges for student teams. The platform uses AI-assisted clarification, creates an editable task card, calculates a transparent readiness score from 0 to 100, publishes confirmed challenges to a shared catalog, and lets businesses manually review student proposals.
 
-**Hack Alem AI 2026 · Education Track · 5-hour MVP**
+
 
 ---
 
@@ -42,7 +42,7 @@ This means students spend time clarifying the task before they can actually star
 
 ## Our Solution
 
-Warspaceman turns a weak business brief into an actionable challenge through one complete workflow:
+BriefForge turns a weak business brief into an actionable challenge through one complete workflow:
 
 ```text
 Business need
@@ -91,7 +91,7 @@ The ML service supports two modes:
 - **OpenAI provider mode** when an API key is configured;
 - **deterministic rule-based fallback** when no provider key is available.
 
-This means the main MVP flow can continue even if the external AI provider is unavailable.
+This means the main workflow can continue even if the external AI provider is unavailable.
 
 The system does **not** automatically publish AI-generated content. The business reviews and controls the final task.
 
@@ -224,7 +224,7 @@ AI never automatically chooses the winning team.
 
 ---
 
-## End-to-End MVP
+## End-to-End Workflow
 
 The implemented workflow is:
 
@@ -291,7 +291,7 @@ The backend stores data in SQLite using a persistent Docker volume.
 
 ---
 
-# Run the Full MVP
+# Run BriefForge
 
 The easiest way to run the complete project is Docker Compose.
 
@@ -303,8 +303,8 @@ The easiest way to run the complete project is Docker Compose.
 ### Clone
 
 ```powershell
-git clone https://github.com/BAITC-Hacks/hack-849af6d9-warspaceman.git
-cd hack-849af6d9-warspaceman
+git clone https://github.com/XEQU4/briefforge.git
+cd briefforge
 ```
 
 ### Start
@@ -353,7 +353,7 @@ The SQLite database is stored in a persistent Docker volume and survives a norma
 
 ## Optional OpenAI Mode
 
-The MVP can run without an OpenAI API key using the deterministic ML fallback.
+BriefForge can run without an OpenAI API key using the deterministic ML fallback.
 
 To enable provider-backed AI generation, copy the example environment file:
 
@@ -435,7 +435,7 @@ POST /generate-questions
 POST /form-card
 ```
 
-This confirms service-to-service integration in the running MVP.
+This confirms service-to-service integration in the running application.
 
 It is not intended as a comprehensive benchmark of AI model quality.
 
@@ -512,7 +512,7 @@ Review the proposal.
 
 Accept or reject the proposal manually.
 
-This demonstrates the entire task-to-team workflow inside the working MVP.
+This demonstrates the entire task-to-team workflow in BriefForge.
 
 ---
 
@@ -532,7 +532,7 @@ This file is the source of truth for endpoint paths and request/response formats
 .
 ├── frontend/             React/Vite application
 ├── backend/              FastAPI API, database, rating and proposals
-├── ML/                   clarification and task-card AI service
+├── ml/                   clarification and task-card AI service
 ├── docs/
 │   ├── API_CONTRACT.md
 │   └── screenshots/
@@ -542,9 +542,9 @@ This file is the source of truth for endpoint paths and request/response formats
 
 ---
 
-## MVP Scope
+## Current Scope
 
-The following functionality was intentionally excluded from the 5-hour MVP:
+The current implementation does not include:
 
 - production authentication;
 - password recovery;
@@ -556,7 +556,7 @@ The following functionality was intentionally excluded from the 5-hour MVP:
 - full project management;
 - production deployment infrastructure.
 
-The scope was deliberately limited to delivering a reliable end-to-end workflow from a raw business need to a student proposal and a manual business decision.
+The implementation covers an end-to-end workflow from a raw business need to a student proposal and a manual business decision.
 
 ---
 
@@ -567,3 +567,7 @@ The platform does not rank companies.
 It measures how ready a **specific business task** is for students to work on.
 
 The better the task is described, the clearer it becomes for student teams — and the higher its readiness score.
+
+## Origin
+
+BriefForge originated as a Hack Alem prototype.

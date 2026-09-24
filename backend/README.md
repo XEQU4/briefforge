@@ -9,7 +9,7 @@ python -m pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-The ML service defaults to `http://localhost:8001`, matching `ML/README.md`.
+The ML service defaults to `http://localhost:8001`, matching `ml/README.md`.
 Set `ML_SERVICE_URL` to override that address, for example
 `$env:ML_SERVICE_URL = 'http://127.0.0.1:8001'` in PowerShell or
 `export ML_SERVICE_URL=http://127.0.0.1:8001` in a POSIX shell.
@@ -51,7 +51,7 @@ python -m unittest discover -s tests -v
 
 Tests use a temporary SQLite database and mocked HTTP transports. They do not
 test connectivity to a running ML service. The actual ML service must still be
-started separately from `ML/` for a live integration check.
+started separately from `ml/` for a live integration check.
 
 ## Known limitations
 
