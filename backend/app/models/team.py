@@ -13,4 +13,5 @@ class Team(Base):
     skills: Mapped[str | None] = mapped_column(Text, nullable=True)
     technologies: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    proposals: Mapped[list["Proposal"]] = relationship(back_populates="team")
+    proposals: Mapped[list["Proposal"]] = relationship(back_populates="team", passive_deletes="all")
+    members: Mapped[list["TeamMember"]] = relationship(back_populates="team", cascade="all, delete-orphan")

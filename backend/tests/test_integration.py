@@ -18,11 +18,14 @@ from app.core import config  # noqa: E402
 from app.core.db import Base, SessionLocal, engine, get_db  # noqa: E402
 from app.domain.status import ProposalStatus, TaskStatus  # noqa: E402
 from app.main import app, create_app  # noqa: E402
-from app.models import ClarifyingQuestion, Proposal, Task, Team  # noqa: E402,F401
+from app.models import (  # noqa: E402,F401
+    ClarifyingQuestion, Organization, OrganizationMember, OrganizationMemberRole,
+    Proposal, Task, Team, TeamMember, TeamMemberRole, User,
+)
 from app.services import ai_client  # noqa: E402
 from app.services.rating import calculate_rating, readiness_for_score  # noqa: E402
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # noqa: E402
-from sqlalchemy import func, select  # noqa: E402
+from sqlalchemy import delete, func, select  # noqa: E402
 
 
 QUESTIONS = [
@@ -44,6 +47,8 @@ CARD = {
 class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         async with engine.begin() as connection:
+            if connection.dialect.name == "sqlite":
+                await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
             await connection.run_sync(Base.metadata.drop_all)
             await connection.run_sync(Base.metadata.create_all)
         self.client = httpx.AsyncClient(
@@ -593,6 +598,97 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def _admin_request(self, application):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url="http://testserver") as client:
             return await client.get("/admin/demo")
+
+    async def test_ownership_foundation_constraints_and_delete_policies(self):
+        async with SessionLocal() as session:
+            owner = User(email="  PERSON@Example.COM ", display_name="Person")
+            organization = Organization(name="Acme", slug=" Acme & Co. ")
+            team = Team(name="Team")
+            session.add_all([owner, organization, team])
+            await session.flush()
+            self.assertEqual(owner.email, "person@example.com")
+            self.assertEqual(organization.slug, "acme-co")
+
+            task = Task(title="Legacy compatible", organization_id=organization.id, created_by_user_id=owner.id)
+            proposal = Proposal(task=task, team=team, idea="Idea", submitted_by=owner)
+            session.add_all([task, proposal])
+            org_member = OrganizationMember(organization=organization, user=owner, role=OrganizationMemberRole.OWNER)
+            team_member = TeamMember(team=team, user=owner, role=TeamMemberRole.OWNER)
+            session.add_all([org_member, team_member])
+            await session.commit()
+            task_id, proposal_id, owner_id, organization_id, team_id = task.id, proposal.id, owner.id, organization.id, team.id
+
+        # Email and slug normalization make case/spacing variants collide in DB constraints.
+        async with SessionLocal() as session:
+            session.add(User(email="PERSON@example.com"))
+            with self.assertRaises(IntegrityError):
+                await session.commit()
+            await session.rollback()
+            session.add(Organization(name="Duplicate", slug="ACME co"))
+            with self.assertRaises(IntegrityError):
+                await session.commit()
+            await session.rollback()
+
+        async with SessionLocal() as session:
+            session.add(OrganizationMember(organization_id=organization_id, user_id=owner_id))
+            with self.assertRaises(IntegrityError):
+                await session.commit()
+            await session.rollback()
+            session.add(TeamMember(team_id=team_id, user_id=owner_id))
+            with self.assertRaises(IntegrityError):
+                await session.commit()
+            await session.rollback()
+
+        # Multiple proposals per team/task remain supported by existing API behavior.
+        async with SessionLocal() as session:
+            session.add(Proposal(task_id=task_id, team_id=team_id, idea="Second idea"))
+            legacy_task = Task(title="No owner links")
+            session.add(legacy_task)
+            await session.commit()
+            self.assertIsNone(legacy_task.organization_id)
+            self.assertIsNone(legacy_task.created_by_user_id)
+
+        async with SessionLocal() as session:
+            organization_to_delete = await session.get(Organization, organization_id)
+            await session.delete(organization_to_delete)
+            with self.assertRaises(IntegrityError):
+                await session.flush()
+            await session.rollback()
+            team_to_delete = await session.get(Team, team_id)
+            await session.delete(team_to_delete)
+            with self.assertRaises(IntegrityError):
+                await session.flush()
+            await session.rollback()
+            task_to_delete = await session.get(Task, task_id)
+            await session.delete(task_to_delete)
+            with self.assertRaises(IntegrityError):
+                await session.flush()
+            await session.rollback()
+            await session.execute(delete(User).where(User.id == owner_id))
+            await session.commit()
+            retained_task = await session.get(Task, task_id)
+            retained_proposal = await session.get(Proposal, proposal_id)
+            self.assertIsNotNone(retained_task)
+            self.assertIsNotNone(retained_proposal)
+            self.assertIsNone(retained_task.created_by_user_id)
+            self.assertIsNone(retained_proposal.submitted_by_user_id)
+
+        async with SessionLocal() as session:
+            new_user = User(email="membership@example.com")
+            new_org = Organization(name="Disposable org", slug="disposable-org")
+            new_team = Team(name="Disposable team")
+            session.add_all([new_user, new_org, new_team])
+            await session.flush()
+            session.add_all([
+                OrganizationMember(organization_id=new_org.id, user_id=new_user.id),
+                TeamMember(team_id=new_team.id, user_id=new_user.id),
+            ])
+            await session.flush()
+            await session.execute(delete(Organization).where(Organization.id == new_org.id))
+            await session.execute(delete(Team).where(Team.id == new_team.id))
+            await session.commit()
+            self.assertEqual(await session.scalar(select(func.count()).select_from(OrganizationMember)), 0)
+            self.assertEqual(await session.scalar(select(func.count()).select_from(TeamMember)), 0)
 
 
 class RatingUnitTests(unittest.TestCase):

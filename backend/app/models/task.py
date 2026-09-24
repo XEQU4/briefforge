@@ -53,13 +53,21 @@ class Task(Base):
     readiness_level: Mapped[str] = mapped_column(String(20), default="draft", nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", name="fk_tasks_organization_id_organizations", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", name="fk_tasks_created_by_user_id_users", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     questions: Mapped[list["ClarifyingQuestion"]] = relationship(
         back_populates="task",
         cascade="all, delete-orphan",
         order_by="ClarifyingQuestion.order",
     )
-    proposals: Mapped[list["Proposal"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+    proposals: Mapped[list["Proposal"]] = relationship(back_populates="task", passive_deletes="all")
+    organization: Mapped["Organization | None"] = relationship(back_populates="tasks")
+    created_by: Mapped["User | None"] = relationship(back_populates="created_tasks", foreign_keys=[created_by_user_id])
 
 
 class ClarifyingQuestion(Base):
