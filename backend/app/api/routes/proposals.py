@@ -1,17 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.authorization import require_task_organization_member, require_team_member
 from app.core.db import commit_or_rollback, get_db
-from app.domain.status import TaskStatus
+from app.domain.status import ProposalStatus, TaskStatus
 from app.models import Proposal, Task, Team, User
 from app.schemas import ProposalCreate, ProposalRead, ProposalUpdate
+from app.schemas.pagination import PaginatedResponse
 from app.services.lifecycle import InvalidTransition, transition_proposal
 
 router = APIRouter(tags=["proposals"])
+legacy_list_router = APIRouter(tags=["proposals"])
+versioned_list_router = APIRouter(tags=["proposals"])
 
 
 @router.post("/tasks/{task_id}/proposals", response_model=ProposalRead, status_code=201)
@@ -39,18 +42,66 @@ async def create_proposal(
     return proposal
 
 
-@router.get("/tasks/{task_id}/proposals", response_model=list[ProposalRead])
-async def list_proposals(
+async def _list_proposals(
+    *,
+    versioned: bool,
     task_id: int,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    page: int = 1,
+    page_size: int = 20,
+    status_filter: ProposalStatus | None = None,
+    db: AsyncSession,
+    user: User,
 ):
     task = await db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     await require_task_organization_member(task, user, db)
-    result = await db.execute(select(Proposal).where(Proposal.task_id == task_id).order_by(Proposal.created_at))
-    return list(result.scalars().all())
+    filters = [Proposal.task_id == task_id]
+    if status_filter is not None:
+        filters.append(Proposal.status == status_filter)
+    query = select(Proposal).where(*filters).order_by(Proposal.created_at, Proposal.id)
+    if not versioned:
+        result = await db.execute(query)
+        return list(result.scalars().all())
+    total = await db.scalar(select(func.count()).select_from(Proposal).where(*filters)) or 0
+    result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
+    return PaginatedResponse[ProposalRead].build(list(result.scalars().all()), page, page_size, total)
+
+
+@legacy_list_router.get("/tasks/{task_id}/proposals", response_model=list[ProposalRead])
+async def list_proposals_legacy(
+    task_id: int,
+    status_filter: ProposalStatus | None = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return await _list_proposals(
+        versioned=False,
+        task_id=task_id,
+        status_filter=status_filter,
+        db=db,
+        user=user,
+    )
+
+
+@versioned_list_router.get("/tasks/{task_id}/proposals", response_model=PaginatedResponse[ProposalRead])
+async def list_proposals_v1(
+    task_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status_filter: ProposalStatus | None = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return await _list_proposals(
+        versioned=True,
+        task_id=task_id,
+        page=page,
+        page_size=page_size,
+        status_filter=status_filter,
+        db=db,
+        user=user,
+    )
 
 
 @router.patch("/proposals/{proposal_id}", response_model=ProposalRead)

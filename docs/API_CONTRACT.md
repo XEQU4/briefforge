@@ -3,6 +3,14 @@
 All JSON responses use the fields shown below. `TaskStatus` is one of `draft`, `clarifying`, `card_ready`, `confirmed`; `ProposalStatus` is one of `pending`, `accepted`, or `rejected`. Status values are lowercase strings.
 `readiness_level` is one of `draft` (0–39), `working` (40–69), `ready` (70–89), or `priority` (90–100).
 
+## Versioning and pagination
+
+`/api/v1` is the preferred product API namespace. Current unversioned product routes remain temporary compatibility aliases to the same handlers and authorization rules; they may be removed in a later release. Health routes (`/health/live` and `/health/ready`) remain unversioned.
+
+Versioned task, team, and task-proposal list endpoints return `{ "items": [], "page": 1, "page_size": 20, "total": 0, "pages": 0 }`. `page` defaults to `1` and must be at least `1`. `page_size` defaults to `20` and must be between `1` and `100`. Counts are calculated in the database. Empty results have `pages: 0`. The corresponding unversioned list routes keep their existing array response.
+
+Versioned and unversioned examples below use the current compatibility paths; prepend `/api/v1` to use the preferred API. For example, use `GET /api/v1/tasks` for the paginated catalog and `GET /tasks` for its legacy array response.
+
 ## Health
 
 ### `GET /health/live`
@@ -19,7 +27,7 @@ Authentication uses an opaque server-side session. The browser receives the `bri
 
 For cookie-authenticated unsafe requests, send `X-CSRF-Token` with the value of the separate `briefforge_csrf` cookie. This CSRF cookie is `SameSite=Lax`, `Path=/`, and intentionally readable by browser code; its value is random, and only its hash is stored with the session. The server requires the header, CSRF cookie, and stored hash to match. `GET`, `HEAD`, and `OPTIONS` are exempt. This is a synchronizer-token check; CORS is not used as CSRF protection.
 
-### `POST /auth/register`
+### `POST /auth/register` (also `POST /api/v1/auth/register`)
 
 Request: `{ "email": "person@example.com", "password": "at least 10 characters", "display_name": "Name|null" }`
 
@@ -27,7 +35,7 @@ Creates a user and session, sets both cookies, and returns the public user with 
 
 Example response (`201`): `{ "id": 1, "email": "person@example.com", "display_name": "Name", "created_at": "datetime", "updated_at": "datetime" }`.
 
-### `POST /auth/login`
+### `POST /auth/login` (also `POST /api/v1/auth/login`)
 
 Request: `{ "email": "person@example.com", "password": "..." }`
 
@@ -35,11 +43,11 @@ On success, creates a session, updates `last_login_at`, sets both cookies, and r
 
 Example error (`401`): `{ "detail": "Invalid email or password" }`.
 
-### `POST /auth/logout`
+### `POST /auth/logout` (also `POST /api/v1/auth/logout`)
 
 Revokes the session if one is present and clears both cookies. Repeated logout is safe. With an active session cookie, the CSRF header is required.
 
-### `GET /auth/me`
+### `GET /auth/me` (also `GET /api/v1/auth/me`)
 
 Returns the public user for an active, non-expired session. Missing, malformed, expired, revoked, or inactive sessions return `401`.
 
@@ -53,6 +61,10 @@ Cookie-authenticated `POST`, `PATCH`, `PUT`, and `DELETE` requests require the C
 
 ## Organizations
 
+### `GET /organizations/{id}` — authenticated organization member
+
+Also available as `GET /api/v1/organizations/{id}`. Returns `OrganizationRead` without membership data. A non-member receives `403`; a missing organization receives `404`.
+
 ### `POST /organizations` — authenticated
 
 Request: `{ "name": "Example Business", "slug": "example-business" }`
@@ -64,6 +76,10 @@ Creates the organization and an `owner` membership for the current user atomical
 Returns the current user's organizations as `[OrganizationRead]`; organizations without a membership are omitted.
 
 ## Tasks
+
+### `GET /tasks/{id}`
+
+Also available as `GET /api/v1/tasks/{id}`. Confirmed tasks are public. Non-confirmed tasks require authentication and organization membership; a legacy non-confirmed task without an organization is inaccessible through this route. Returns `TaskRead`; missing tasks return `404`.
 
 ### `POST /tasks` — authenticated
 
@@ -99,7 +115,9 @@ Response: `{ "score": 0, "readiness_level": "draft", "breakdown": { "context+nee
 
 ### `GET /tasks` — public
 
-Query parameters: optional `topic`, `readiness_level`, and `sort=rating`.
+The versioned route `GET /api/v1/tasks` supports `topic`, `readiness_level`, `min_rating`, `max_rating`, `q`, `sort`, `page`, and `page_size`. Ratings are integers from `0` to `100`; when both bounds are supplied, `min_rating` must not exceed `max_rating`. Readiness must be `draft`, `working`, `ready`, or `priority`. `q` is trimmed and case-insensitively searches title, context, need, expected result, and topic; blank search is ignored. Sort supports `rating`, `newest`, and `oldest`, defaulting to `newest`. Ties are ordered deterministically by ID. Invalid values return `422`.
+
+The versioned response is the pagination envelope described above. The unversioned route retains its array response and existing `topic`, `readiness_level`, and `sort=rating` behavior.
 
 Response: `[Task]` containing confirmed catalog tasks.
 
@@ -119,7 +137,7 @@ The task must exist and be confirmed. The current user must belong to the select
 
 ### `GET /tasks/{id}/proposals` — authenticated member of the task's organization
 
-Only an organization member may list a task's proposals. Team members cannot list competitor proposals. Tasks without an organization cannot use this product route. Response: `[Proposal]`.
+The versioned route supports `page`, `page_size`, and an optional `status` (`pending`, `accepted`, or `rejected`). It returns the pagination envelope. Only an organization member may list a task's proposals. Team members cannot list competitor proposals. Tasks without an organization cannot use this product route. The unversioned route keeps its array response.
 
 ### `PATCH /proposals/{id}` — authenticated member of the proposal task's organization
 
@@ -141,7 +159,11 @@ The server creates the team and its initial `owner` membership for the current u
 
 ### `GET /teams` — public
 
-Response: `[Team]` containing only public profile fields; membership and account data are not returned.
+The versioned `GET /api/v1/teams` supports `page`, `page_size`, and `q`. Search is trimmed and case-insensitively checks name, interests, skills, and technologies. Its response is paginated. The unversioned route keeps its array response. Both contain only public profile fields; membership and account data are not returned.
+
+### `GET /teams/{id}` — public
+
+Also available as `GET /api/v1/teams/{id}`. Returns the same safe `TeamRead` profile as the list. Missing teams return `404`.
 
 `Team`: `{ "id": 1, "name": "string", "interests": "string|null", "skills": "string|null", "technologies": "string|null" }`
 # ML service API

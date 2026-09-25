@@ -6,7 +6,8 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, health, organizations, proposals, tasks, teams
+from app.api.router import api_router
+from app.api.routes import health
 from app.core import config
 from app.core.db import SessionLocal
 from app.services.auth_security import hash_session_value, load_active_session
@@ -30,7 +31,7 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
     @application.middleware("http")
     async def demo_security_headers(request, call_next):
         result = await call_next(request)
-        if request.url.path.startswith("/auth/"):
+        if request.url.path.startswith(("/auth/", "/api/v1/auth/")):
             result.headers["Cache-Control"] = "no-store"
             result.headers["X-Content-Type-Options"] = "nosniff"
         if request.url.path == "/admin/demo" or request.url.path.startswith("/admin/demo/"):
@@ -61,7 +62,7 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
 
     @application.exception_handler(RequestValidationError)
     async def safe_validation_errors(request: Request, exc: RequestValidationError):
-        if request.url.path.startswith("/auth/"):
+        if request.url.path.startswith(("/auth/", "/api/v1/auth/")):
             errors = [
                 {key: value for key, value in error.items() if key not in {"input", "ctx", "url"}}
                 for error in exc.errors()
@@ -70,11 +71,7 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
         return await request_validation_exception_handler(request, exc)
 
     application.include_router(health.router)
-    application.include_router(auth.router)
-    application.include_router(organizations.router)
-    application.include_router(tasks.router)
-    application.include_router(proposals.router)
-    application.include_router(teams.router)
+    application.include_router(api_router)
     if enabled and valid_demo_admin_token(token):
         from app.api.routes.demo_admin import router
         application.include_router(router)

@@ -1015,6 +1015,155 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await outsider_student.aclose()
             await anonymous.aclose()
 
+    async def test_v1_namespace_and_legacy_aliases(self):
+        paths = app.openapi()["paths"]
+        self.assertIn("/api/v1/auth/me", paths)
+        self.assertIn("/auth/me", paths)
+        self.assertIn("/health/live", paths)
+        self.assertNotIn("/api/v1/health/live", paths)
+        legacy_task_schema = paths["/tasks"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        versioned_task_schema = paths["/api/v1/tasks"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        self.assertEqual(legacy_task_schema["type"], "array")
+        versioned_schema_name = versioned_task_schema["$ref"].rsplit("/", 1)[-1]
+        versioned_task_schema = app.openapi()["components"]["schemas"][versioned_schema_name]
+        self.assertEqual(set(versioned_task_schema["properties"]), {"items", "page", "page_size", "total", "pages"})
+        self.assertEqual((await self.client.get("/api/v1/auth/me")).status_code, 200)
+        public_team = await self.client.post("/teams", json={"name": "Versioned team"})
+        self.assertEqual(public_team.status_code, 201, public_team.text)
+        versioned_team = await self.client.get(f"/api/v1/teams/{public_team.json()['id']}")
+        self.assertEqual(versioned_team.status_code, 200)
+        self.assertEqual(set(versioned_team.json()), {"id", "name", "interests", "skills", "technologies"})
+
+        legacy_teams = await self.client.get("/teams")
+        versioned_teams = await self.client.get("/api/v1/teams")
+        self.assertIsInstance(legacy_teams.json(), list)
+        self.assertEqual(versioned_teams.json()["total"], 1)
+        self.assertEqual(len(versioned_teams.json()["items"]), 1)
+
+        legacy_tasks = await self.client.get("/tasks")
+        versioned_tasks = await self.client.get("/api/v1/tasks")
+        self.assertIsInstance(legacy_tasks.json(), list)
+        self.assertEqual(set(versioned_tasks.json()), {"items", "page", "page_size", "total", "pages"})
+        self.assertEqual((await self.client.get("/health/live")).status_code, 200)
+
+    async def test_v1_task_get_authorization_pagination_search_filter_and_sort(self):
+        outsider, _outsider_data = await self.new_registered_client("v1-outsider@example.com")
+        anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+        try:
+            async with SessionLocal() as session:
+                confirmed = [
+                    Task(
+                        title=title,
+                        context=context,
+                        topic=topic,
+                        status=TaskStatus.CONFIRMED,
+                        rating_score=score,
+                        readiness_level=level,
+                        organization_id=self.business_org.id,
+                    )
+                    for title, context, topic, score, level in [
+                        ("Alpha Research", "Needle in a Haystack", "Health", 90, "priority"),
+                        ("Beta Design", "Better workflows", "Education", 70, "ready"),
+                        ("Gamma Build", "Searchable Context", "Health", 40, "working"),
+                    ]
+                ]
+                private = Task(
+                    title="Hidden Draft",
+                    status=TaskStatus.CLARIFYING,
+                    organization_id=self.business_org.id,
+                )
+                legacy_private = Task(title="Legacy Draft", status=TaskStatus.CLARIFYING)
+                session.add_all([*confirmed, private, legacy_private])
+                await session.commit()
+                for item in [*confirmed, private, legacy_private]:
+                    await session.refresh(item)
+
+            self.assertEqual((await anonymous.get(f"/api/v1/tasks/{private.id}")).status_code, 401)
+            self.assertEqual((await outsider.get(f"/api/v1/tasks/{private.id}")).status_code, 403)
+            self.assertEqual((await self.client.get(f"/api/v1/tasks/{private.id}")).status_code, 200)
+            self.assertEqual((await self.client.get(f"/api/v1/tasks/{legacy_private.id}")).status_code, 403)
+            self.assertEqual((await anonymous.get(f"/api/v1/tasks/{confirmed[0].id}")).status_code, 200)
+
+            first = await anonymous.get("/api/v1/tasks", params={"page": 1, "page_size": 2})
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual((first.json()["total"], first.json()["pages"], len(first.json()["items"])), (3, 2, 2))
+            second = await anonymous.get("/api/v1/tasks", params={"page": 2, "page_size": 2})
+            self.assertEqual(second.json()["total"], 3)
+            self.assertEqual(len(second.json()["items"]), 1)
+            self.assertNotIn(private.id, [row["id"] for row in first.json()["items"] + second.json()["items"]])
+            self.assertEqual((await anonymous.get("/api/v1/tasks", params={"page_size": 101})).status_code, 422)
+
+            searched = await anonymous.get("/api/v1/tasks", params={"q": "  nEeDlE  "})
+            self.assertEqual(searched.json()["total"], 1)
+            self.assertEqual(searched.json()["items"][0]["id"], confirmed[0].id)
+            empty_search = await anonymous.get("/api/v1/tasks", params={"q": "   "})
+            self.assertEqual(empty_search.json()["total"], 3)
+            filtered = await anonymous.get(
+                "/api/v1/tasks", params={"topic": "Health", "readiness_level": "priority", "min_rating": 90, "max_rating": 90}
+            )
+            self.assertEqual(filtered.json()["total"], 1)
+            self.assertEqual(filtered.json()["items"][0]["id"], confirmed[0].id)
+            self.assertEqual((await anonymous.get("/api/v1/tasks", params={"min_rating": 80, "max_rating": 20})).status_code, 422)
+            self.assertEqual((await anonymous.get("/api/v1/tasks", params={"sort": "random"})).status_code, 422)
+
+            by_rating = await anonymous.get("/api/v1/tasks", params={"sort": "rating"})
+            self.assertEqual([row["rating_score"] for row in by_rating.json()["items"]], [90, 70, 40])
+            by_oldest = await anonymous.get("/api/v1/tasks", params={"sort": "oldest"})
+            self.assertEqual([row["id"] for row in by_oldest.json()["items"]], sorted(row["id"] for row in by_oldest.json()["items"]))
+            by_newest = await anonymous.get("/api/v1/tasks", params={"sort": "newest"})
+            self.assertEqual([row["id"] for row in by_newest.json()["items"]], sorted((row["id"] for row in by_newest.json()["items"]), reverse=True))
+            self.assertEqual((await anonymous.get("/api/v1/tasks", params={"min_rating": -1})).status_code, 422)
+        finally:
+            await outsider.aclose()
+            await anonymous.aclose()
+
+    async def test_v1_organization_team_search_and_proposal_pagination_authorization(self):
+        outsider, _outsider_data = await self.new_registered_client("v1-org-outsider@example.com")
+        anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+        try:
+            member_org = await self.client.get(f"/api/v1/organizations/{self.business_org.id}")
+            self.assertEqual(member_org.status_code, 200)
+            self.assertEqual((await outsider.get(f"/api/v1/organizations/{self.business_org.id}")).status_code, 403)
+            self.assertEqual((await anonymous.get(f"/api/v1/organizations/{self.business_org.id}")).status_code, 401)
+            self.assertEqual((await self.client.get("/api/v1/organizations/999999")).status_code, 404)
+
+            team_a = await self.client.post("/teams", json={"name": "Robotics group", "skills": "CAD"})
+            team_b = await self.client.post("/teams", json={"name": "Writing group", "interests": "Robotics journalism"})
+            self.assertEqual(team_a.status_code, 201)
+            self.assertEqual(team_b.status_code, 201)
+            result = await anonymous.get("/api/v1/teams", params={"q": "ROBOTICS", "page_size": 1})
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(result.json()["total"], 2)
+            self.assertEqual(len(result.json()["items"]), 1)
+            self.assertEqual(set(result.json()["items"][0]), {"id", "name", "interests", "skills", "technologies"})
+            self.assertEqual((await anonymous.get("/api/v1/teams/999999")).status_code, 404)
+
+            async with SessionLocal() as session:
+                task = Task(
+                    title="Proposal catalog task", status=TaskStatus.CONFIRMED,
+                    organization_id=self.business_org.id, rating_score=50, readiness_level="working",
+                )
+                session.add(task)
+                await session.flush()
+                session.add_all([
+                    Proposal(task_id=task.id, team_id=team_a.json()["id"], idea=f"Idea {index}", status=status)
+                    for index, status in enumerate([ProposalStatus.PENDING, ProposalStatus.ACCEPTED, ProposalStatus.PENDING])
+                ])
+                await session.commit()
+                task_id = task.id
+
+            page = await self.client.get(f"/api/v1/tasks/{task_id}/proposals", params={"page_size": 2})
+            self.assertEqual(page.status_code, 200, page.text)
+            self.assertEqual((page.json()["total"], page.json()["pages"], len(page.json()["items"])), (3, 2, 2))
+            pending = await self.client.get(f"/api/v1/tasks/{task_id}/proposals", params={"status": "pending"})
+            self.assertEqual(pending.json()["total"], 2)
+            self.assertEqual((await outsider.get(f"/api/v1/tasks/{task_id}/proposals")).status_code, 403)
+            self.assertEqual((await anonymous.get(f"/api/v1/tasks/{task_id}/proposals")).status_code, 401)
+            self.assertEqual((await self.client.get(f"/api/v1/tasks/{task_id}/proposals", params={"status": "unknown"})).status_code, 422)
+        finally:
+            await outsider.aclose()
+            await anonymous.aclose()
+
     async def _admin_request(self, application):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url="http://testserver") as client:
             return await client.get("/admin/demo")
