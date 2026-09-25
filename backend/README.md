@@ -58,6 +58,22 @@ Tests use a temporary SQLite database and mocked HTTP transports. They do not
 test connectivity to a running ML service. The actual ML service must still be
 started separately from `ml/` for a live integration check.
 
+## Task publication workflow
+
+Tasks retain their existing content lifecycle and have a separate
+`publication_status` (`unpublished`, `published`, `archived`). Only confirmed
+and published tasks appear in public catalogs or allow proposal submission.
+Organization members control publication through the publish, unpublish, and
+archive actions. The migration backfills existing confirmed tasks as published
+to preserve their existing visibility, and other tasks as unpublished.
+
+PostgreSQL locking and migration-backfill checks are available in
+`scripts/postgres_publication_checks.py` and
+`scripts/postgres_publication_migration.py`; run them only against a dedicated
+throwaway database. `scripts/proxy_publication_smoke.py` exercises the live
+Nginx proxy and publication workflow. These checks are separate from the SQLite
+integration suite because SQLite does not provide PostgreSQL row-lock semantics.
+
 ## Known limitations
 
 - The backend deliberately does not infer card fields for nonstandard

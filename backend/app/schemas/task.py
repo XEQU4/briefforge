@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.domain.status import TaskStatus
+from app.domain.status import TaskPublicationStatus, TaskStatus
 
 
 class TaskFields(BaseModel):
@@ -25,6 +25,13 @@ class TaskCreate(BaseModel):
     topic: str | None = None
     organization_id: int | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def publication_state_is_server_controlled(cls, values):
+        if isinstance(values, dict) and "publication_status" in values:
+            raise ValueError("publication_status is server-controlled")
+        return values
+
     @field_validator("draft_text")
     @classmethod
     def draft_text_must_contain_non_whitespace(cls, value: str) -> str:
@@ -41,6 +48,7 @@ class TaskRead(TaskFields):
     model_config = ConfigDict(from_attributes=True)
     id: int
     status: TaskStatus
+    publication_status: TaskPublicationStatus
     rating_score: int
     rating_breakdown: dict[str, Any]
     readiness_level: str

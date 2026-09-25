@@ -23,7 +23,7 @@ Runs a lightweight database query. Returns `{ "status": "ready", "database": "ok
 
 ## Authentication
 
-Authentication uses an opaque server-side session. The browser receives the `briefforge_session` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, configured lifetime); PostgreSQL stores only its SHA-256 hash. The `Secure` attribute is controlled by `SESSION_COOKIE_SECURE` and must be enabled behind HTTPS in production. Responses from `/auth/*` are not cacheable. Public user responses contain only `id`, `email`, `display_name`, `created_at`, and `updated_at`.
+Authentication uses an opaque server-side session. The browser receives the `briefforge_session` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, configured lifetime); PostgreSQL stores only its SHA-256 hash. The `Secure` attribute is controlled by `SESSION_COOKIE_SECURE` and must be enabled behind HTTPS in production. Responses from `/auth/*` and `/api/v1/auth/*` are not cacheable. Public user responses contain only `id`, `email`, `display_name`, `created_at`, and `updated_at`.
 
 For cookie-authenticated unsafe requests, send `X-CSRF-Token` with the value of the separate `briefforge_csrf` cookie. This CSRF cookie is `SameSite=Lax`, `Path=/`, and intentionally readable by browser code; its value is random, and only its hash is stored with the session. The server requires the header, CSRF cookie, and stored hash to match. `GET`, `HEAD`, and `OPTIONS` are exempt. This is a synchronizer-token check; CORS is not used as CSRF protection.
 
@@ -77,9 +77,57 @@ Returns the current user's organizations as `[OrganizationRead]`; organizations 
 
 ## Tasks
 
+### Content workflow and publication
+
+`status` describes content preparation (`draft`, `clarifying`, `card_ready`,
+`confirmed`). The separate `publication_status` describes visibility:
+`unpublished`, `published`, or `archived`. New tasks default to `unpublished`;
+only `confirmed` + `published` tasks are public. Publication state is
+server-controlled and cannot be set through task creation or generic `PATCH`.
+
+For compatibility, the first successful confirmation of a `card_ready`,
+unpublished task confirms and publishes it in one operation. Reconfirming an
+already confirmed task recalculates its rating while preserving its current
+publication state. A non-confirmed archived task must first be restored with
+unpublish; invalid content workflow transitions remain `409`.
+
+| Action | Allowed starting state | Result |
+| --- | --- | --- |
+| First confirm | `card_ready` + `unpublished` | `confirmed` + `published` |
+| Reconfirm | `confirmed` + any publication state | `confirmed` + same publication state |
+| Publish | `confirmed` + `unpublished` or `archived` | `confirmed` + `published` |
+| Unpublish | any publication state | same content state + `unpublished` |
+| Archive | any content state and publication state | same content state + `archived` |
+
+Authenticated organization members can call `POST /api/v1/tasks/{id}/publish`,
+`POST /api/v1/tasks/{id}/unpublish`, and `POST /api/v1/tasks/{id}/archive`;
+matching unversioned aliases remain available during the compatibility period.
+Each returns `TaskRead` with `200`; repeated no-op actions preserve the row
+without an unnecessary write. The existing CSRF header is required for these
+cookie-authenticated requests.
+
+Public task catalog, count, filtering, search, detail, and rating reads include
+only tasks that are both `confirmed` and `published`. An authenticated member
+of the owning organization may read other task states privately; unrelated
+users receive `403`, anonymous private reads receive `401`, and ownerless
+private legacy tasks remain inaccessible. Access-controlled task responses
+are not publicly cached. Editing or answering a task never changes its
+publication state.
+
+New proposals require a confirmed, published task and an authenticated member
+of the selected team. Unpublished, archived, and non-confirmed tasks return
+`409` to otherwise authorized team members. Unpublishing or archiving does not
+delete or change existing proposals; organization members retain access to
+list and decide them.
+
+Migration backfills existing confirmed tasks as published and all other tasks
+as unpublished. Rolling this feature back to the old application can expose
+previously hidden confirmed tasks because that application has no publication
+visibility filter; rollback is not a harmless reset.
+
 ### `GET /tasks/{id}`
 
-Also available as `GET /api/v1/tasks/{id}`. Confirmed tasks are public. Non-confirmed tasks require authentication and organization membership; a legacy non-confirmed task without an organization is inaccessible through this route. Returns `TaskRead`; missing tasks return `404`.
+Also available as `GET /api/v1/tasks/{id}`. Confirmed and published tasks are public. Other task states require authentication and organization membership; an ownerless private legacy task is inaccessible through this route. Returns `TaskRead`, including `publication_status`; missing tasks return `404`.
 
 ### `POST /tasks` — authenticated
 
@@ -87,7 +135,7 @@ Request: `{ "draft_text": "string", "topic": "string|null", "organization_id": 1
 
 The user must belong to the selected organization. If `organization_id` is omitted, no memberships returns `409` instructing the user to create or join an organization; multiple memberships returns `409` requiring an explicit ID. A user who is not a member receives `403`. The server records the organization and current user as task ownership/attribution.
 
-Response `201`: `{ "task": Task, "questions": [Question] }`. The task is created in `clarifying` status and at least three questions are returned.
+Response `201`: `{ "task": TaskRead, "questions": [Question] }`. The task is created in `clarifying` + `unpublished` status and at least three questions are returned. A client-supplied `publication_status` is rejected.
 
 ### `PATCH /tasks/{id}/answers` — authenticated organization member
 
@@ -97,7 +145,7 @@ Response: `Task` with the generated editable card and `card_ready` status.
 
 ### `PATCH /tasks/{id}` — authenticated organization member
 
-Request: any subset of editable card fields (`title`, `context`, `need`, `users`, `data_materials`, `constraints`, `expected_result`, `success_criteria`, `contact`, `interaction_format`, `topic`). Task status cannot be changed through this endpoint.
+Request: any subset of editable card fields (`title`, `context`, `need`, `users`, `data_materials`, `constraints`, `expected_result`, `success_criteria`, `contact`, `interaction_format`, `topic`). Task `status` and `publication_status` cannot be changed through this endpoint; either field returns `422`.
 
 Response: `Task`.
 
@@ -105,13 +153,13 @@ Response: `Task`.
 
 Request: `{}`
 
-Response: `Task` with recalculated `rating_score`, `rating_breakdown`, `readiness_level`, and `confirmed` status.
+Response: `TaskRead` with recalculated `rating_score`, `rating_breakdown`, `readiness_level`, `confirmed` status, and its publication state. First confirmation of an unpublished `card_ready` task also publishes it for compatibility. Reconfirmation recalculates rating but preserves `unpublished`, `published`, or `archived` state. A non-confirmed archived task returns `409` until restored with unpublish.
 
 Task lifecycle transitions are `draft` → `clarifying` → `card_ready` → `confirmed`. Task creation continues to start at `clarifying`; confirmation requires `card_ready`. Reconfirming an already confirmed task is idempotent.
 
-### `GET /tasks/{id}/rating` — public for confirmed tasks; otherwise authenticated organization member
+### `GET /tasks/{id}/rating` — public for published tasks; otherwise authenticated organization member
 
-Response: `{ "score": 0, "readiness_level": "draft", "breakdown": { "context+need": 0, "data_materials": 0, "expected_result": 0, "success_criteria": 0, "constraints": 0, "users": 0, "contact+interaction_format": 0 }, "missing_fields": ["context"], "suggestions": ["Add context"] }` (readiness is `draft`, `working`, `ready`, or `priority`; `suggestions` gives actionable guidance for each missing field.)
+Response: `{ "score": 0, "readiness_level": "draft", "breakdown": { "context+need": 0, "data_materials": 0, "expected_result": 0, "success_criteria": 0, "constraints": 0, "users": 0, "contact+interaction_format": 0 }, "missing_fields": ["context"], "suggestions": ["Add context"] }` (readiness is `draft`, `working`, `ready`, or `priority`; `suggestions` gives actionable guidance for each missing field.) Public visibility requires both confirmed content status and published publication status. Private responses include `Cache-Control: private, no-store`.
 
 ### `GET /tasks` — public
 
@@ -119,11 +167,21 @@ The versioned route `GET /api/v1/tasks` supports `topic`, `readiness_level`, `mi
 
 The versioned response is the pagination envelope described above. The unversioned route retains its array response and existing `topic`, `readiness_level`, and `sort=rating` behavior.
 
-Response: `[Task]` containing confirmed catalog tasks.
+Response: `[TaskRead]` containing only tasks whose content status is `confirmed` and publication status is `published`.
 
-Only confirmed tasks appear in the public catalog. Confirmed legacy tasks without an organization remain visible. Legacy tasks cannot be edited, answered, confirmed, or have private ratings viewed through normal product routes; they are never adopted by the current user.
+Unpublished and archived confirmed tasks are excluded from public results, search, filters, and count totals. Confirmed legacy tasks without an organization are public only when published. Ownerless private legacy tasks remain inaccessible through normal product routes; they are never adopted by the current user.
 
-`Task`: `{ "id": 1, "title": "string|null", "context": "string|null", "need": "string|null", "users": "string|null", "data_materials": "string|null", "constraints": "string|null", "expected_result": "string|null", "success_criteria": "string|null", "contact": "string|null", "interaction_format": "string|null", "topic": "string|null", "status": "confirmed", "rating_score": 0, "rating_breakdown": {}, "readiness_level": "draft", "created_at": "datetime|null", "updated_at": "datetime|null" }`
+`TaskRead`: `{ "id": 1, "title": "string|null", "context": "string|null", "need": "string|null", "users": "string|null", "data_materials": "string|null", "constraints": "string|null", "expected_result": "string|null", "success_criteria": "string|null", "contact": "string|null", "interaction_format": "string|null", "topic": "string|null", "status": "confirmed", "publication_status": "published", "rating_score": 0, "rating_breakdown": {}, "readiness_level": "draft", "created_at": "datetime|null", "updated_at": "datetime|null" }`
+
+### Publication actions
+
+`POST /tasks/{id}/publish`, `POST /tasks/{id}/unpublish`, and `POST /tasks/{id}/archive` are also available under `/api/v1/tasks/{id}/...`. Each requires an authenticated member of the task's organization and a valid CSRF token. Requests have no body and return `200 TaskRead`. Publishing a non-confirmed task returns `409`; unpublish and archive preserve content status and existing proposals. Repeating the current action is idempotent.
+
+### Browser proxy paths
+
+The Vite and Nginx browser proxies preserve `/api/v1/...` when forwarding to FastAPI. Legacy `/api/...` paths strip the `/api` prefix. Both proxy routes preserve query strings, cookies, CSRF headers, response status, and cache headers.
+
+Publication actions return the same `TaskRead`. They do not modify content, questions, answers, rating, ownership, or proposal history.
 
 `Question`: `{ "id": 1, "task_id": 1, "question_text": "string", "answer_text": "string|null", "order": 1 }`
 
@@ -133,7 +191,7 @@ Only confirmed tasks appear in the public catalog. Confirmed legacy tasks withou
 
 Request: `{ "team_id": 1, "idea": "string", "plan": "string|null", "deadline": "string|null", "link": "string|null" }`
 
-The task must exist and be confirmed. The current user must belong to the selected team or receives `403`. The server sets `submitted_by_user_id` from the current session. Response `201`: `Proposal` with `pending` status.
+The task must be both confirmed and published. An otherwise authorized team member gets `409` when it is unpublished, archived, or not confirmed. The current user must belong to the selected team or receives `403`. The server sets `submitted_by_user_id` from the current session. Response `201`: `Proposal` with `pending` status.
 
 ### `GET /tasks/{id}/proposals` — authenticated member of the task's organization
 

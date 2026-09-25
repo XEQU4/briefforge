@@ -8,6 +8,12 @@ class TaskStatus(str, Enum):
     CONFIRMED = "confirmed"
 
 
+class TaskPublicationStatus(str, Enum):
+    UNPUBLISHED = "unpublished"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
 class ProposalStatus(str, Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"

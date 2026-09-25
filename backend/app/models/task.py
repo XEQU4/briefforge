@@ -2,9 +2,11 @@ from datetime import datetime
 
 from sqlalchemy import (
     DateTime,
+    CheckConstraint,
     Enum as SqlEnum,
     ForeignKey,
     Integer,
+    Index,
     JSON,
     String,
     Text,
@@ -14,7 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
-from app.domain.status import TaskStatus
+from app.domain.status import TaskPublicationStatus, TaskStatus
 
 
 def _enum_values(enum_type):
@@ -23,6 +25,17 @@ def _enum_values(enum_type):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "publication_status IN ('unpublished', 'published', 'archived')",
+            name="ck_tasks_publication_status_allowed",
+        ),
+        CheckConstraint(
+            "publication_status != 'published' OR status = 'confirmed'",
+            name="ck_tasks_published_requires_confirmed",
+        ),
+        Index("ix_tasks_public_catalog", "status", "publication_status"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -47,6 +60,18 @@ class Task(Base):
         default=TaskStatus.DRAFT,
         nullable=False,
         index=True,
+    )
+    publication_status: Mapped[TaskPublicationStatus] = mapped_column(
+        SqlEnum(
+            TaskPublicationStatus,
+            native_enum=False,
+            create_constraint=False,
+            values_callable=_enum_values,
+            length=20,
+        ),
+        default=TaskPublicationStatus.UNPUBLISHED,
+        server_default=TaskPublicationStatus.UNPUBLISHED.value,
+        nullable=False,
     )
     rating_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
     rating_breakdown: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

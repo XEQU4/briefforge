@@ -6,11 +6,12 @@ from sqlalchemy.orm import selectinload
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.authorization import require_task_organization_member, require_team_member
 from app.core.db import commit_or_rollback, get_db
-from app.domain.status import ProposalStatus, TaskStatus
+from app.domain.status import ProposalStatus
 from app.models import Proposal, Task, Team, User
 from app.schemas import ProposalCreate, ProposalRead, ProposalUpdate
 from app.schemas.pagination import PaginatedResponse
 from app.services.lifecycle import InvalidTransition, transition_proposal
+from app.services.publication import is_publicly_visible, load_task_for_update
 
 router = APIRouter(tags=["proposals"])
 legacy_list_router = APIRouter(tags=["proposals"])
@@ -24,14 +25,12 @@ async def create_proposal(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    task = await db.get(Task, task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task.status != TaskStatus.CONFIRMED:
-        raise HTTPException(status_code=409, detail="Proposals can only be submitted to confirmed catalog tasks")
+    task = await load_task_for_update(db, task_id)
     if await db.get(Team, payload.team_id) is None:
         raise HTTPException(status_code=404, detail="Team not found")
     await require_team_member(payload.team_id, user, db)
+    if not is_publicly_visible(task):
+        raise HTTPException(status_code=409, detail="Proposals can only be submitted to published confirmed tasks")
     proposal = Proposal(task_id=task_id, submitted_by_user_id=user.id, **payload.model_dump())
     db.add(proposal)
     await commit_or_rollback(db)

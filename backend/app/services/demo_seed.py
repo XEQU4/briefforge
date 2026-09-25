@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import SessionLocal, commit_or_rollback
-from app.domain.status import ProposalStatus, TaskStatus
+from app.domain.status import ProposalStatus, TaskPublicationStatus, TaskStatus
 from app.models import ClarifyingQuestion, DemoSeedManifest, Proposal, Task, Team
 from app.services.rating import calculate_rating, readiness_for_score
 
@@ -82,7 +82,7 @@ def _drafts():
         ["Какую проблему нужно решить?", "С кем команде взаимодействовать?", "Что будет считаться успехом?"],
     ]
     return [Task(title=f"Черновик: демо-задача {i}", context=description, topic=topics[i - 1],
-                 status=TaskStatus.CLARIFYING, questions=[])
+                 status=TaskStatus.CLARIFYING, publication_status=TaskPublicationStatus.UNPUBLISHED, questions=[])
             for i, description in enumerate(descriptions, 1)], question_sets
 
 
@@ -109,7 +109,11 @@ def _cards():
         for index, field in enumerate(optional):
             if index >= keep_count:
                 values[field] = None
-        task = Task(**values, status=TaskStatus.CONFIRMED)
+        task = Task(
+            **values,
+            status=TaskStatus.CONFIRMED,
+            publication_status=TaskPublicationStatus.PUBLISHED,
+        )
         task.rating_score, task.rating_breakdown, _ = calculate_rating(task)
         task.readiness_level = readiness_for_score(task.rating_score)
         result.append(task)

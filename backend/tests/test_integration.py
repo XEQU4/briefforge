@@ -18,7 +18,7 @@ os.environ.setdefault("SESSION_COOKIE_SECURE", "false")
 
 from app.core import config  # noqa: E402
 from app.core.db import Base, SessionLocal, engine, get_db  # noqa: E402
-from app.domain.status import ProposalStatus, TaskStatus  # noqa: E402
+from app.domain.status import ProposalStatus, TaskPublicationStatus, TaskStatus  # noqa: E402
 from app.main import app, create_app  # noqa: E402
 from app.models import (  # noqa: E402,F401
     AuthSession, ClarifyingQuestion, Organization, OrganizationMember, OrganizationMemberRole,
@@ -605,6 +605,7 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 async with SessionLocal() as session:
                     seeded_task = await session.get(Task, seeded.id)
                     seeded_task.title = "Manual edit survives"
+                    seeded_task.publication_status = TaskPublicationStatus.ARCHIVED
                     await session.commit()
                 repeat = await client.post("/admin/demo/seed", headers=headers)
                 self.assertEqual(repeat.status_code, 200)
@@ -612,6 +613,16 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 async with SessionLocal() as session:
                     current = await session.get(Task, seeded.id)
                     self.assertEqual(current.title, "Manual edit survives")
+                    self.assertEqual(current.publication_status, TaskPublicationStatus.ARCHIVED)
+                    confirmed_states = (await session.scalars(
+                        select(Task.publication_status).where(Task.status == TaskStatus.CONFIRMED)
+                    )).all()
+                    draft_states = (await session.scalars(
+                        select(Task.publication_status).where(Task.status != TaskStatus.CONFIRMED)
+                    )).all()
+                    self.assertEqual(confirmed_states.count(TaskPublicationStatus.PUBLISHED), 7)
+                    self.assertEqual(confirmed_states.count(TaskPublicationStatus.ARCHIVED), 1)
+                    self.assertEqual(draft_states.count(TaskPublicationStatus.UNPUBLISHED), 5)
                     self.assertNotEqual(current.title, original_title)
 
     async def test_demo_admin_rejects_invalid_token_configuration(self):
@@ -905,7 +916,11 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([task["id"] for task in catalog.json()], [task_id])
 
             async with SessionLocal() as session:
-                legacy_confirmed = Task(title="Legacy public", status=TaskStatus.CONFIRMED)
+                legacy_confirmed = Task(
+                    title="Legacy public",
+                    status=TaskStatus.CONFIRMED,
+                    publication_status=TaskPublicationStatus.PUBLISHED,
+                )
                 legacy_draft = Task(title="Legacy private", status=TaskStatus.DRAFT)
                 session.add_all([legacy_confirmed, legacy_draft])
                 await session.commit()
@@ -1057,6 +1072,7 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         context=context,
                         topic=topic,
                         status=TaskStatus.CONFIRMED,
+                        publication_status=TaskPublicationStatus.PUBLISHED,
                         rating_score=score,
                         readiness_level=level,
                         organization_id=self.business_org.id,
@@ -1141,6 +1157,7 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
             async with SessionLocal() as session:
                 task = Task(
                     title="Proposal catalog task", status=TaskStatus.CONFIRMED,
+                    publication_status=TaskPublicationStatus.PUBLISHED,
                     organization_id=self.business_org.id, rating_score=50, readiness_level="working",
                 )
                 session.add(task)
@@ -1163,6 +1180,161 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await outsider.aclose()
             await anonymous.aclose()
+
+    async def test_publication_transitions_and_first_confirmation_compatibility(self):
+        created = await self.create_task(topic="Publication state machine")
+        task_id = created["task"]["id"]
+        self.assertEqual(created["task"]["publication_status"], "unpublished")
+        forced = await self.client.post(
+            "/tasks", json={"draft_text": "Cannot force publish", "publication_status": "published"}
+        )
+        self.assertEqual(forced.status_code, 422)
+        patched = await self.client.patch(f"/tasks/{task_id}", json={"publication_status": "published"})
+        self.assertEqual(patched.status_code, 422)
+        self.assertEqual((await self.client.post(f"/api/v1/tasks/{task_id}/publish")).status_code, 409)
+
+        archived_draft = await self.client.post(f"/tasks/{task_id}/archive", json={})
+        self.assertEqual((archived_draft.status_code, archived_draft.json()["status"], archived_draft.json()["publication_status"]),
+                         (200, "clarifying", "archived"))
+        self.assertEqual((await self.client.post(f"/api/v1/tasks/{task_id}/confirm", json={})).status_code, 409)
+        restored = await self.client.post(f"/api/v1/tasks/{task_id}/unpublish")
+        self.assertEqual(restored.json()["publication_status"], "unpublished")
+
+        answered = await self.client.patch(
+            f"/api/v1/tasks/{task_id}/answers", json={"answers": ["Need", "Users", "Success"]}
+        )
+        self.assertEqual(answered.status_code, 200, answered.text)
+        first_confirm = await self.client.post(f"/tasks/{task_id}/confirm", json={})
+        self.assertEqual((first_confirm.json()["status"], first_confirm.json()["publication_status"]),
+                         ("confirmed", "published"))
+
+        unpublished = await self.client.post(f"/api/v1/tasks/{task_id}/unpublish")
+        self.assertEqual(unpublished.json()["publication_status"], "unpublished")
+        reconfirmed_unpublished = await self.client.post(f"/tasks/{task_id}/confirm", json={})
+        self.assertEqual(reconfirmed_unpublished.json()["publication_status"], "unpublished")
+        archived = await self.client.post(f"/api/v1/tasks/{task_id}/archive")
+        self.assertEqual(archived.json()["publication_status"], "archived")
+        reconfirmed_archived = await self.client.post(f"/tasks/{task_id}/confirm", json={})
+        self.assertEqual(reconfirmed_archived.json()["publication_status"], "archived")
+        async with SessionLocal() as session:
+            archived_at = await session.scalar(select(Task.updated_at).where(Task.id == task_id))
+        no_op_archive = await self.client.post(f"/api/v1/tasks/{task_id}/archive")
+        self.assertEqual(no_op_archive.json()["publication_status"], "archived")
+        async with SessionLocal() as session:
+            self.assertEqual(await session.scalar(select(Task.updated_at).where(Task.id == task_id)), archived_at)
+        archived_edit = await self.client.patch(f"/tasks/{task_id}", json={"title": "Edited while archived"})
+        self.assertEqual(archived_edit.json()["publication_status"], "archived")
+        published_again = await self.client.post(f"/tasks/{task_id}/publish")
+        self.assertEqual(published_again.json()["publication_status"], "published")
+        edited = await self.client.patch(f"/tasks/{task_id}", json={"title": "Still published"})
+        self.assertEqual(edited.json()["publication_status"], "published")
+
+        outsider, _ = await self.new_registered_client("publication-outsider@example.com")
+        try:
+            self.assertEqual((await outsider.post(f"/api/v1/tasks/{task_id}/archive")).status_code, 403)
+            self.assertEqual((await outsider.post(f"/api/v1/tasks/{task_id}/publish")).status_code, 403)
+        finally:
+            await outsider.aclose()
+
+    async def test_public_task_visibility_applies_to_catalog_detail_rating_and_counts(self):
+        outsider, _ = await self.new_registered_client("visibility-outsider@example.com")
+        anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+        try:
+            async with SessionLocal() as session:
+                public_task = Task(
+                    title="Visible publication marker", status=TaskStatus.CONFIRMED,
+                    publication_status=TaskPublicationStatus.PUBLISHED, topic="visibility-special",
+                    organization_id=self.business_org.id, rating_score=80, readiness_level="ready",
+                )
+                private_task = Task(
+                    title="Hidden publication marker", status=TaskStatus.CONFIRMED,
+                    publication_status=TaskPublicationStatus.UNPUBLISHED, topic="visibility-special",
+                    organization_id=self.business_org.id, rating_score=70, readiness_level="ready",
+                )
+                archived_task = Task(
+                    title="Archived publication marker", status=TaskStatus.CONFIRMED,
+                    publication_status=TaskPublicationStatus.ARCHIVED, topic="visibility-special",
+                    organization_id=self.business_org.id, rating_score=90, readiness_level="priority",
+                )
+                ownerless_private = Task(
+                    title="Ownerless private marker", status=TaskStatus.CONFIRMED,
+                    publication_status=TaskPublicationStatus.UNPUBLISHED,
+                )
+                session.add_all([public_task, private_task, archived_task, ownerless_private])
+                await session.commit()
+                for item in (public_task, private_task, archived_task, ownerless_private):
+                    await session.refresh(item)
+
+            legacy = await anonymous.get("/tasks", params={"q": "publication marker"})
+            versioned = await anonymous.get("/api/v1/tasks", params={"q": "publication marker"})
+            self.assertEqual([item["id"] for item in legacy.json()], [public_task.id])
+            self.assertEqual(versioned.json()["total"], 1)
+            self.assertEqual([item["id"] for item in versioned.json()["items"]], [public_task.id])
+            for task in (private_task, archived_task, ownerless_private):
+                for prefix in ("", "/api/v1"):
+                    detail = await anonymous.get(f"{prefix}/tasks/{task.id}")
+                    rating = await anonymous.get(f"{prefix}/tasks/{task.id}/rating")
+                    self.assertEqual(detail.status_code, 401)
+                    self.assertEqual(rating.status_code, 401)
+            for task in (private_task, archived_task):
+                detail = await self.client.get(f"/api/v1/tasks/{task.id}")
+                rating = await self.client.get(f"/api/v1/tasks/{task.id}/rating")
+                self.assertEqual(detail.status_code, 200)
+                self.assertEqual(rating.status_code, 200)
+                self.assertEqual(detail.headers["cache-control"], "private, no-store")
+                self.assertEqual(rating.headers["cache-control"], "private, no-store")
+                self.assertEqual((await outsider.get(f"/api/v1/tasks/{task.id}")).status_code, 403)
+                self.assertEqual((await outsider.get(f"/api/v1/tasks/{task.id}/rating")).status_code, 403)
+            public_detail = await anonymous.get(f"/api/v1/tasks/{public_task.id}")
+            public_rating = await anonymous.get(f"/api/v1/tasks/{public_task.id}/rating")
+            self.assertEqual(public_detail.status_code, 200)
+            self.assertEqual(public_detail.json()["publication_status"], "published")
+            self.assertEqual(public_rating.status_code, 200)
+        finally:
+            await outsider.aclose()
+            await anonymous.aclose()
+
+    async def test_publication_preserves_proposals_and_csrf_on_both_prefixes(self):
+        created = await self.create_task(topic="Publication proposal history")
+        task_id = created["task"]["id"]
+        await self.client.patch(f"/tasks/{task_id}/answers", json={"answers": ["Need", "Users", "Success"]})
+        confirmed = await self.client.post(f"/tasks/{task_id}/confirm", json={})
+        self.assertEqual(confirmed.json()["publication_status"], "published")
+        team = await self.client.post("/teams", json={"name": "Publication member team"})
+        proposal_response = await self.client.post(
+            f"/api/v1/tasks/{task_id}/proposals", json={"team_id": team.json()["id"], "idea": "Preserve this"}
+        )
+        self.assertEqual(proposal_response.status_code, 201, proposal_response.text)
+        proposal_id = proposal_response.json()["id"]
+
+        csrf = self.client.headers.get("X-CSRF-Token")
+        self.client.headers.pop("X-CSRF-Token", None)
+        blocked_v1 = await self.client.post(f"/api/v1/tasks/{task_id}/archive")
+        blocked_legacy = await self.client.post(f"/tasks/{task_id}/unpublish")
+        self.assertEqual((blocked_v1.status_code, blocked_legacy.status_code), (403, 403))
+        self.client.headers["X-CSRF-Token"] = csrf
+
+        unpublish = await self.client.post(f"/api/v1/tasks/{task_id}/unpublish")
+        self.assertEqual(unpublish.status_code, 200)
+        rejected_submission = await self.client.post(
+            f"/tasks/{task_id}/proposals", json={"team_id": team.json()["id"], "idea": "Must reject"}
+        )
+        self.assertEqual(rejected_submission.status_code, 409)
+        legacy_public = await self.client.get("/tasks")
+        v1_public = await self.client.get("/api/v1/tasks")
+        self.assertNotIn(task_id, [item["id"] for item in legacy_public.json()])
+        self.assertNotIn(task_id, [item["id"] for item in v1_public.json()["items"]])
+
+        archive = await self.client.post(f"/tasks/{task_id}/archive")
+        self.assertEqual(archive.json()["publication_status"], "archived")
+        proposals = await self.client.get(f"/api/v1/tasks/{task_id}/proposals")
+        self.assertEqual((proposals.status_code, proposals.json()["total"]), (200, 1))
+        decision = await self.client.patch(f"/proposals/{proposal_id}", json={"status": "accepted"})
+        self.assertEqual(decision.status_code, 200, decision.text)
+        self.assertEqual(decision.json()["status"], "accepted")
+        async with SessionLocal() as session:
+            saved_proposal = await session.get(Proposal, proposal_id)
+            self.assertEqual(saved_proposal.status, ProposalStatus.ACCEPTED)
 
     async def _admin_request(self, application):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url="http://testserver") as client:

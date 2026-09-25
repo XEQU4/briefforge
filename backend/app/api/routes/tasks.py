@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -6,12 +6,19 @@ from sqlalchemy.orm import selectinload
 from app.core.db import commit_or_rollback, get_db
 from app.api.dependencies.auth import get_current_user, get_optional_current_user
 from app.api.dependencies.authorization import require_organization_member, require_task_organization_member
-from app.domain.status import TaskStatus
+from app.domain.status import TaskPublicationStatus, TaskStatus
 from app.models import ClarifyingQuestion, OrganizationMember, Task, User
 from app.schemas import AnswersSubmit, TaskCreate, TaskRead, TaskUpdate, TaskWithQuestions
 from app.schemas.pagination import PaginatedResponse
 from app.services.ai_client import GENERATED_CARD_FIELDS, build_card_from_answers, get_clarifying_questions
 from app.services.lifecycle import InvalidTransition, transition_task
+from app.services.publication import (
+    PublicationAction,
+    is_publicly_visible,
+    load_task_for_update,
+    public_visibility_filters,
+    transition_publication,
+)
 from app.services.rating import calculate_rating, readiness_for_score
 
 router = APIRouter(tags=["tasks"])
@@ -179,8 +186,10 @@ async def confirm_task(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    task = await _get_task(task_id, db)
+    task = await load_task_for_update(db, task_id)
     await require_task_organization_member(task, user, db)
+    if task.status != TaskStatus.CONFIRMED and task.publication_status == TaskPublicationStatus.ARCHIVED:
+        raise HTTPException(status_code=409, detail="Unarchive the task before confirming it")
     try:
         next_status = transition_task(task.status, TaskStatus.CONFIRMED)
     except InvalidTransition:
@@ -189,19 +198,66 @@ async def confirm_task(
     task.rating_score = score
     task.rating_breakdown = breakdown
     task.readiness_level = readiness_for_score(score)
+    first_confirmation = task.status != TaskStatus.CONFIRMED
     task.status = next_status
+    if first_confirmation and task.publication_status == TaskPublicationStatus.UNPUBLISHED:
+        task.publication_status = TaskPublicationStatus.PUBLISHED
     await commit_or_rollback(db)
     return await _get_task(task.id, db)
+
+
+async def _change_publication(
+    task_id: int,
+    action: PublicationAction,
+    db: AsyncSession,
+    user: User,
+):
+    task = await load_task_for_update(db, task_id)
+    await require_task_organization_member(task, user, db)
+    next_status = transition_publication(task, action)
+    if next_status != task.publication_status:
+        task.publication_status = next_status
+        await commit_or_rollback(db)
+    return await _get_task(task.id, db)
+
+
+@router.post("/tasks/{task_id}/publish", response_model=TaskRead)
+async def publish_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return await _change_publication(task_id, PublicationAction.PUBLISH, db, user)
+
+
+@router.post("/tasks/{task_id}/unpublish", response_model=TaskRead)
+async def unpublish_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return await _change_publication(task_id, PublicationAction.UNPUBLISH, db, user)
+
+
+@router.post("/tasks/{task_id}/archive", response_model=TaskRead)
+async def archive_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return await _change_publication(task_id, PublicationAction.ARCHIVE, db, user)
 
 
 @router.get("/tasks/{task_id}/rating")
 async def task_rating(
     task_id: int,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
 ):
     task = await _get_task(task_id, db)
-    if task.status != TaskStatus.CONFIRMED:
+    response.headers["Cache-Control"] = "private, no-store"
+    if not is_publicly_visible(task):
         if user is None:
             raise HTTPException(status_code=401, detail="Authentication required")
         await require_task_organization_member(task, user, db)
@@ -213,11 +269,13 @@ async def task_rating(
 @router.get("/tasks/{task_id}", response_model=TaskRead)
 async def get_task(
     task_id: int,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
 ):
     task = await _get_task(task_id, db)
-    if task.status != TaskStatus.CONFIRMED:
+    response.headers["Cache-Control"] = "private, no-store"
+    if not is_publicly_visible(task):
         if user is None:
             raise HTTPException(status_code=401, detail="Authentication required")
         await require_task_organization_member(task, user, db)
@@ -250,7 +308,7 @@ async def _list_tasks(
     if min_rating is not None and max_rating is not None and min_rating > max_rating:
         raise HTTPException(status_code=422, detail="min_rating must be less than or equal to max_rating")
 
-    filters = [Task.status == TaskStatus.CONFIRMED]
+    filters = list(public_visibility_filters())
     if topic:
         filters.append(Task.topic == topic)
     if readiness_level:

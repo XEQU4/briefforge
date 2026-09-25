@@ -88,6 +88,7 @@ jobs:
         working-directory: backend
     env:
       DATABASE_URL: postgresql+asyncpg://briefforge:ci_local_only@localhost:5432/briefforge
+      SESSION_COOKIE_SECURE: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -96,7 +97,11 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r requirements.txt
+      - run: alembic upgrade 1a2af20b3075
+      - run: python scripts/postgres_publication_migration.py seed
       - run: alembic upgrade head
+      - run: python scripts/postgres_publication_migration.py verify
       - run: test "$(alembic heads | wc -l)" -eq 1
       - run: alembic check
       - run: alembic current --verbose | tee alembic-current.txt && grep -q '(head)' alembic-current.txt
+      - run: python scripts/postgres_publication_checks.py
