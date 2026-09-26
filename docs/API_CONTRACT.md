@@ -75,6 +75,21 @@ Creates the organization and an `owner` membership for the current user atomical
 
 Returns the current user's organizations as `[OrganizationRead]`; organizations without a membership are omitted.
 
+### `GET /api/v1/organizations/{id}/tasks` — authenticated organization member
+
+Returns the selected organization's tasks as the standard pagination envelope
+of `TaskRead`. The caller must belong to the organization; a non-member receives
+`403`, and a missing organization receives `404`. Results are scoped to that
+organization and include private workflow states, including `clarifying`,
+`card_ready`, `confirmed`, unpublished, published, and archived tasks. This
+private list does not change the public catalog.
+
+Supports `q` (case-insensitive search over title, context, need, and topic),
+`status` (`TaskStatus`), `publication_status` (`TaskPublicationStatus`),
+`page`, `page_size`, and `sort` (`newest`, `oldest`, or `rating`; defaults to
+`newest`). Filtering, counting, ordering, and page limits run in the database;
+equal sort values use a stable task ID tie-breaker.
+
 ## Tasks
 
 ### Content workflow and publication
@@ -128,6 +143,18 @@ visibility filter; rollback is not a harmless reset.
 ### `GET /tasks/{id}`
 
 Also available as `GET /api/v1/tasks/{id}`. Confirmed and published tasks are public. Other task states require authentication and organization membership; an ownerless private legacy task is inaccessible through this route. Returns `TaskRead`, including `publication_status`; missing tasks return `404`.
+
+### `GET /api/v1/tasks/{id}/questions` — authenticated organization member
+
+Returns `[QuestionRead]` for a task only when the caller belongs to its
+organization. Questions are ordered by `order` ascending and include existing
+`answer_text` values so the business clarification workflow can resume after a
+browser refresh. Anonymous callers receive `401`, unrelated users and callers
+of ownerless legacy private tasks receive `403`, and missing tasks receive
+`404`. Questions and clarification answers are not included in public `TaskRead`
+responses.
+
+`QuestionRead`: `{ "id": 1, "task_id": 1, "question_text": "string", "answer_text": "string|null", "order": 1 }`.
 
 ### `POST /tasks` — authenticated
 
@@ -197,6 +224,16 @@ The task must be both confirmed and published. An otherwise authorized team memb
 
 The versioned route supports `page`, `page_size`, and an optional `status` (`pending`, `accepted`, or `rejected`). It returns the pagination envelope. Only an organization member may list a task's proposals. Team members cannot list competitor proposals. Tasks without an organization cannot use this product route. The unversioned route keeps its array response.
 
+### `GET /api/v1/proposals/mine` — authenticated
+
+Returns the current user's submitted proposal history as the standard
+pagination envelope of `ProposalRead`. Inclusion is based strictly on
+`submitted_by_user_id`; sharing a team with a proposal submitter does not grant
+visibility to that proposal. Supports `page`, `page_size`, and `status`
+(`ProposalStatus`); results are newest first with proposal ID as a stable
+tie-breaker. Other users' proposals and organization-only proposal lists are
+not returned by this endpoint.
+
 ### `PATCH /proposals/{id}` — authenticated member of the proposal task's organization
 
 Request: `{ "status": "pending|accepted|rejected" }`
@@ -222,6 +259,10 @@ The versioned `GET /api/v1/teams` supports `page`, `page_size`, and `q`. Search 
 ### `GET /teams/mine` — authenticated
 
 Available as `GET /api/v1/teams/mine?page=1&page_size=20`. Returns a paginated list of only the current user's team memberships, using the same safe public `Team` profile fields as the public catalog. This route is used when selecting a team for proposal submission; public team browsing does not imply membership. Missing or invalid sessions return `401`.
+
+The business task list and clarification workflow, and the student's proposal
+history, can now be reloaded after a browser refresh. The frontend reloads
+server state on navigation; no notification or realtime updates are implied.
 
 ### `GET /teams/{id}` — public
 

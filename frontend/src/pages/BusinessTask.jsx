@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { archiveTask, getTask, publishTask, unpublishTask } from '../api/tasks'
+import { archiveTask, getTask, getTaskQuestions, publishTask, unpublishTask } from '../api/tasks'
 import ReadinessScore from '../components/ReadinessScore'
 import { EmptyState, LoadingState } from '../components/StatePanel'
+import TaskCard from './TaskCard'
 
 const fields = [
   ['context', 'Context'], ['need', 'Business need'], ['users', 'Users'],
@@ -14,20 +15,34 @@ const fields = [
 export default function BusinessTask() {
   const { taskId } = useParams()
   const [task, setTask] = useState(null)
+  const [questions, setQuestions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [action, setAction] = useState('')
   const [actionError, setActionError] = useState('')
-
-  useEffect(() => {
-    let active = true
+  const [reload, setReload] = useState(0)
+  const loadTask = useCallback(async () => {
     setLoading(true)
     setError(null)
-    getTask(taskId).then((value) => { if (active) setTask(value) }).catch((reason) => { if (active) setError(reason) }).finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
+    setTask(null)
+    setQuestions([])
+    try {
+      const value = await getTask(taskId)
+      setTask(value)
+      if (value.status === 'clarifying' || value.status === 'draft') {
+        setQuestions(await getTaskQuestions(taskId))
+      }
+    } catch (reason) {
+      setError(reason)
+    } finally {
+      setLoading(false)
+    }
   }, [taskId])
 
+  useEffect(() => { loadTask() }, [loadTask, reload])
+
   async function changePublication(nextAction) {
+    if (action) return
     setAction(nextAction)
     setActionError('')
     try {
@@ -41,9 +56,49 @@ export default function BusinessTask() {
   if (loading) return <section className="page"><LoadingState title="Loading business task" /></section>
   if (error?.status === 404) return <section className="page"><EmptyState title="Task not found" description="This task may have been removed or the link may be incorrect." action={<Link to="/business">Back to workspace</Link>} /></section>
   if (error?.status === 403) return <section className="page"><div className="feedback feedback-error" role="alert"><strong>You do not have access to this task.</strong><span>Ask an organization member to share access with you.</span></div></section>
-  if (error) return <section className="page"><div className="feedback feedback-error" role="alert">Unable to load task: {error.message}</div></section>
+  if (error) return <section className="page"><div className="feedback feedback-error" role="alert"><strong>Unable to load this task.</strong><span>Please retry. Your organization access is checked by the server.</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div></section>
+  if (!task) return null
 
-  const canPublish = task.status === 'confirmed' && task.publication_status !== 'published'
+  if (task.status !== 'confirmed' && task.publication_status === 'archived') {
+    return (
+      <section className="page publication-panel feature-panel">
+        <div>
+          <span className="eyebrow">Archived task</span>
+          <h2>Restore the workflow</h2>
+          <p>Restore this task to unpublished before continuing its content workflow.</p>
+        </div>
+
+        <button
+          disabled={Boolean(action)}
+          onClick={() => changePublication('unpublish')}
+        >
+          {action === 'unpublish' ? 'Restoring…' : 'Restore as unpublished'}
+        </button>
+
+        {actionError && (
+          <div className="feedback feedback-error" role="alert">
+            {actionError}
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  if (task.status !== 'confirmed') {
+    return (
+      <TaskCard
+        key={task.id}
+        task={task}
+        questions={questions}
+        onConfirmed={(confirmedTask) => {
+          setQuestions([])
+          setTask(confirmedTask)
+        }}
+      />
+    )
+  }
+
+  const canPublish = task.publication_status !== 'published'
   return (
     <section className="page business-task-page">
       <header className="page-header split-header">

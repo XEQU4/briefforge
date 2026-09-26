@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { answerTask, confirmTask, getTaskRating, updateTask } from '../api/tasks'
 import ReadinessScore from '../components/ReadinessScore'
 
@@ -8,12 +8,23 @@ const longFields = new Set(['context', 'need', 'users', 'data_materials', 'const
 
 export default function TaskCard({ task, questions = [], taskId, onConfirmed }) {
   const id = taskId || task?.id
-  const [answers, setAnswers] = useState(questions.map(() => ''))
+  const [answers, setAnswers] = useState(() => Object.fromEntries(questions.map((question) => [question.id, question.answer_text || ''])))
+  const touchedAnswers = useRef(new Set())
   const [card, setCard] = useState(task || null)
   const [rating, setRating] = useState(null)
   const [action, setAction] = useState(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  useEffect(() => {
+    setAnswers((current) => {
+      const next = { ...current }
+      questions.forEach((question) => {
+        if (!touchedAnswers.current.has(question.id)) next[question.id] = question.answer_text || ''
+      })
+      return next
+    })
+  }, [questions])
 
   if (!id) return <div className="feedback feedback-error" role="alert">Task id is missing.</div>
 
@@ -27,7 +38,7 @@ export default function TaskCard({ task, questions = [], taskId, onConfirmed }) 
     event.preventDefault()
     setAction('answers'); setError(''); setSuccess('')
     try {
-      const generatedCard = await answerTask(id, answers)
+      const generatedCard = await answerTask(id, questions.map((question) => answers[question.id] || ''))
       setCard(generatedCard)
       try { setRating(await getTaskRating(id)) } catch (reason) { setError(`Task card created, but rating could not be loaded: ${reason.message}`) }
     } catch (reason) { setError(reason.message) } finally { setAction(null) }
@@ -65,7 +76,7 @@ export default function TaskCard({ task, questions = [], taskId, onConfirmed }) 
       {isClarifying && questions.length > 0 && (
         <form className="form-panel feature-panel" onSubmit={submitAnswers}>
           <div className="panel-heading"><span className="eyebrow">Step 01 · Clarify</span><h2>Fill the gaps in the original brief</h2><p>Your answers stay in place if the request fails, so you can retry safely.</p></div>
-          <div className="question-fields">{questions.map((question, index) => <label key={question.id}><span className="question-label"><small>{String(index + 1).padStart(2, '0')}</small>{question.question_text}</span><textarea aria-label={question.question_text} value={answers[index] || ''} onChange={(event) => setAnswers((current) => current.map((value, item) => item === index ? event.target.value : value))} placeholder="Add the detail the team will need..." /></label>)}</div>
+          <div className="question-fields">{questions.map((question, index) => <label key={question.id}><span className="question-label"><small>{String(index + 1).padStart(2, '0')}</small>{question.question_text}</span><textarea aria-label={question.question_text} value={answers[question.id] || ''} onChange={(event) => { touchedAnswers.current.add(question.id); setAnswers((current) => ({ ...current, [question.id]: event.target.value })) }} placeholder="Add the detail the team will need..." /></label>)}</div>
           <div className="form-footer"><span className="form-hint">Answers are used to generate the editable card.</span><button disabled={action !== null}>{action === 'answers' ? 'Building card…' : 'Save answers & build card'}</button></div>
         </form>
       )}

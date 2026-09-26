@@ -51,7 +51,7 @@ export default function TaskDraft() {
       {result && <div className="question-preview feature-panel entrance-card">
         <div className="panel-heading"><span className="eyebrow">Draft #{result.task.id}</span><h2>Clarifying questions are ready</h2><p>Continue to answer these questions and unlock the editable task card.</p></div>
         <ol className="question-list">{result.questions.map((question, index) => <li key={question.id}><span>{String(index + 1).padStart(2, '0')}</span><p>{question.question_text}</p></li>)}</ol>
-        <div className="form-footer"><span className="form-hint">Questions and draft are held for this navigation.</span><Link className="small-primary-link" to={`/business/tasks/${result.task.id}`} state={{ workflow: result }}>Continue to task card</Link></div>
+        <div className="form-footer"><span className="form-hint">Your draft and questions are saved, so this workflow can be reopened after a refresh.</span><Link className="small-primary-link" to={`/business/tasks/${result.task.id}`}>Continue to task</Link></div>
       </div>}
     </section>
   )

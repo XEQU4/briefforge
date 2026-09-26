@@ -37,6 +37,15 @@ export function AuthProvider({ children }) {
 
   useEffect(() => { refreshUser().catch(() => {}) }, [refreshUser])
 
+  useEffect(() => {
+    function onSessionExpired() {
+      setUser(null)
+      refreshUser().catch(() => {})
+    }
+    window.addEventListener('briefforge:session-expired', onSessionExpired)
+    return () => window.removeEventListener('briefforge:session-expired', onSessionExpired)
+  }, [refreshUser])
+
   const authenticate = useCallback(async (action, payload) => {
     const current = ++generation.current
     setError(null)

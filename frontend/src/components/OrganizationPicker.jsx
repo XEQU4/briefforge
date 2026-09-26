@@ -14,9 +14,11 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ name: '', slug: '' })
   const [error, setError] = useState('')
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let active = true
+    setError('')
     listMyOrganizations().then((items) => {
       if (!active) return
       setOrganizations(items)
@@ -25,7 +27,7 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
       setShowCreate(items.length === 0)
     }).catch((reason) => { if (active) setError(reason.message) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [initialSelectedId])
+  }, [initialSelectedId, reload])
 
   useEffect(() => { onSelectionChange?.(selectedId ? Number(selectedId) : null) }, [selectedId, onSelectionChange])
 
@@ -49,11 +51,11 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
   }
 
   if (loading) return <LoadingState compact title="Loading organizations" lines={2} />
-  if (error && organizations.length === 0 && !showCreate) return <div className="feedback feedback-error" role="alert">Unable to load organizations: {error}</div>
+  if (error && organizations.length === 0 && !showCreate) return <div className="feedback feedback-error" role="alert"><span>Unable to load your organizations. Please retry.</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>
 
   return (
     <div className="organization-picker">
-      {error && <div className="feedback feedback-error" role="alert">{error}</div>}
+      {error && <div className="feedback feedback-error" role="alert"><span>{error}</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>}
       {organizations.length > 0 && <label>Organization
         <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
           {organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}

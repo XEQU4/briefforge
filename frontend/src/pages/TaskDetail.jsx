@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { createProposal } from '../api/proposals'
@@ -31,6 +31,7 @@ export default function TaskDetail() {
   const [ratingError, setRatingError] = useState('')
   const [proposalError, setProposalError] = useState('')
   const [success, setSuccess] = useState('')
+  const submittingRef = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -60,6 +61,8 @@ export default function TaskDetail() {
 
   async function submitProposal(event) {
     event.preventDefault()
+    if (submittingRef.current || !form.team_id) return
+    submittingRef.current = true
     setSubmitting(true)
     setProposalError('')
     setSuccess('')
@@ -76,7 +79,7 @@ export default function TaskDetail() {
     } catch (reason) {
       if (reason.status === 401) setProposalError('Your session expired. Log in again to submit this proposal.')
       else setProposalError(reason.message)
-    } finally { setSubmitting(false) }
+    } finally { submittingRef.current = false; setSubmitting(false) }
   }
 
   if (loading) return <section className="page"><LoadingState title="Loading task" /></section>
@@ -99,7 +102,7 @@ export default function TaskDetail() {
         <form className="form-panel feature-panel" onSubmit={submitProposal}>
           <div className="panel-heading"><span className="eyebrow">Team workspace</span><h2>Submit a proposal</h2><p>Choose one of your teams and outline a concrete approach. The organization makes the final decision.</p></div>
           {proposalError && <div className="feedback feedback-error" role="alert">{proposalError}</div>}
-          {success && <div className="feedback feedback-success" role="status">{success}</div>}
+          {success && <div className="feedback feedback-success" role="status"><span>{success}</span><Link to="/proposals/mine">View My proposals</Link></div>}
           {teamsLoading && <LoadingState compact lines={2} title="Loading your teams" />}
           {!teamsLoading && !teams.length && <EmptyState title="No team memberships found" description="Create a team profile first. Public team listings do not establish membership." action={<Link to="/teams">Browse or create a team</Link>} />}
           {teams.length > 0 && <>

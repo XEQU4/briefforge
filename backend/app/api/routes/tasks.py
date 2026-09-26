@@ -8,7 +8,7 @@ from app.api.dependencies.auth import get_current_user, get_optional_current_use
 from app.api.dependencies.authorization import require_organization_member, require_task_organization_member
 from app.domain.status import TaskPublicationStatus, TaskStatus
 from app.models import ClarifyingQuestion, OrganizationMember, Task, User
-from app.schemas import AnswersSubmit, TaskCreate, TaskRead, TaskUpdate, TaskWithQuestions
+from app.schemas import AnswersSubmit, QuestionRead, TaskCreate, TaskRead, TaskUpdate, TaskWithQuestions
 from app.schemas.pagination import PaginatedResponse
 from app.services.ai_client import GENERATED_CARD_FIELDS, build_card_from_answers, get_clarifying_questions
 from app.services.lifecycle import InvalidTransition, transition_task
@@ -264,6 +264,19 @@ async def task_rating(
     score, breakdown, missing = calculate_rating(task)
     return {"score": score, "readiness_level": readiness_for_score(score), "breakdown": breakdown,
             "missing_fields": missing, "suggestions": [SUGGESTIONS[field] for field in missing]}
+
+
+@router.get("/tasks/{task_id}/questions", response_model=list[QuestionRead])
+async def get_task_questions(
+    task_id: int,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    task = await _get_task(task_id, db)
+    await require_task_organization_member(task, user, db)
+    response.headers["Cache-Control"] = "private, no-store"
+    return sorted(task.questions, key=lambda question: (question.order, question.id))
 
 
 @router.get("/tasks/{task_id}", response_model=TaskRead)

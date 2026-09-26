@@ -30,6 +30,7 @@ export default function AppShell() {
           <div className="nav-links" aria-label="Product navigation">
             <NavLink className={({ isActive }) => `nav-button${isActive ? ' is-active' : ''}`} to="/tasks">Tasks</NavLink>
             <NavLink className={({ isActive }) => `nav-button${isActive ? ' is-active' : ''}`} to="/teams">Teams</NavLink>
+            {authenticated && <NavLink className={({ isActive }) => `nav-button${isActive ? ' is-active' : ''}`} to="/proposals/mine">My proposals</NavLink>}
             {authenticated && <NavLink className={({ isActive }) => `nav-button${isActive ? ' is-active' : ''}`} to="/business">Business</NavLink>}
           </div>
           <div className="account-nav">

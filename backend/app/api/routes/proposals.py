@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,6 +16,30 @@ from app.services.publication import is_publicly_visible, load_task_for_update
 router = APIRouter(tags=["proposals"])
 legacy_list_router = APIRouter(tags=["proposals"])
 versioned_list_router = APIRouter(tags=["proposals"])
+
+
+@versioned_list_router.get("/proposals/mine", response_model=PaginatedResponse[ProposalRead])
+async def list_my_proposals(
+    response: Response,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status_filter: ProposalStatus | None = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    filters = [Proposal.submitted_by_user_id == user.id]
+    if status_filter is not None:
+        filters.append(Proposal.status == status_filter)
+    total = await db.scalar(select(func.count()).select_from(Proposal).where(*filters)) or 0
+    result = await db.execute(
+        select(Proposal)
+        .where(*filters)
+        .order_by(Proposal.created_at.desc(), Proposal.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return PaginatedResponse[ProposalRead].build(list(result.scalars().all()), page, page_size, total)
 
 
 @router.post("/tasks/{task_id}/proposals", response_model=ProposalRead, status_code=201)

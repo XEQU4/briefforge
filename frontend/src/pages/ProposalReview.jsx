@@ -8,6 +8,7 @@ const PAGE_SIZE = 10
 export default function ProposalReview() {
   const { taskId } = useParams()
   const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState('')
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -18,11 +19,12 @@ export default function ProposalReview() {
     let active = true
     setLoading(true)
     setError(null)
-    listProposals(taskId, page, PAGE_SIZE).then((value) => { if (active) setResult(value) }).catch((reason) => { if (active) setError(reason) }).finally(() => { if (active) setLoading(false) })
+    listProposals(taskId, { page, page_size: PAGE_SIZE, status: statusFilter }).then((value) => { if (active) setResult(value) }).catch((reason) => { if (active) setError(reason) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [taskId, page])
+  }, [taskId, page, statusFilter])
 
   async function decide(proposal, status) {
+    if (pending !== null || proposal.status !== 'pending') return
     setPending(proposal.id)
     setActionError('')
     try {
@@ -39,8 +41,9 @@ export default function ProposalReview() {
   return (
     <section className="page proposal-review-page">
       <header className="page-header"><span className="eyebrow">Business workspace · Task #{taskId}</span><h1>Review proposals.</h1><p>Accept or reject pending proposals. Decisions are validated by the server.</p><Link to={`/business/tasks/${taskId}`}>Back to task</Link></header>
+      <div className="filters-panel glass-panel"><label>Proposal status<select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }}><option value="">All proposals</option><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select></label><span className="muted">{result.total} proposals</span></div>
       {actionError && <div className="feedback feedback-error" role="alert">{actionError}</div>}
-      {!result.items.length ? <EmptyState title="No proposals yet" description="When a team submits a proposal for this task, it will appear here." /> : <ul className="card-list proposal-grid">{result.items.map((proposal) => <li className="proposal-card" key={proposal.id}><div className="card-topline"><span className="proposal-team">Team #{proposal.team_id}</span><span className={`status-badge status-${proposal.status}`}>{proposal.status}</span></div><h2>{proposal.idea}</h2><p>{proposal.plan || 'No plan provided.'}</p><div className="proposal-meta">{proposal.deadline && <span>Deadline · {proposal.deadline}</span>}{proposal.link && <a href={proposal.link} target="_blank" rel="noreferrer">Open prototype ↗</a>}</div>{proposal.status === 'pending' && <div className="button-row"><button disabled={pending === proposal.id} onClick={() => decide(proposal, 'accepted')}>{pending === proposal.id ? 'Saving…' : 'Accept proposal'}</button><button className="danger-ghost" disabled={pending === proposal.id} onClick={() => decide(proposal, 'rejected')}>Reject</button></div>}</li>)}</ul>}
+      {!result.items.length ? <EmptyState title={statusFilter ? `No ${statusFilter} proposals` : 'No proposals yet'} description={statusFilter ? 'Choose another status to review proposals in that state.' : 'When a team submits a proposal for this task, it will appear here.'} /> : <ul className="card-list proposal-grid">{result.items.map((proposal) => <li className="proposal-card" key={proposal.id}><div className="card-topline"><span className="proposal-team">Team #{proposal.team_id}</span><span className={`status-badge status-${proposal.status}`}>{proposal.status}</span></div><h2>{proposal.idea}</h2><p>{proposal.plan || 'No plan provided.'}</p><div className="proposal-meta">{proposal.deadline && <span>Deadline · {proposal.deadline}</span>}{proposal.link && <a href={proposal.link} target="_blank" rel="noreferrer">Open prototype ↗</a>}</div>{proposal.status === 'pending' && <div className="button-row"><button disabled={pending !== null} onClick={() => decide(proposal, 'accepted')}>{pending === proposal.id ? 'Saving…' : 'Accept proposal'}</button><button className="danger-ghost" disabled={pending !== null} onClick={() => decide(proposal, 'rejected')}>Reject</button></div>}</li>)}</ul>}
       {result.total > 0 && <div className="pagination-controls"><span>Page {result.page} of {Math.max(result.pages, 1)} · {result.total} proposals</span><div className="button-row"><button className="secondary" disabled={result.page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</button><button className="secondary" disabled={result.page >= result.pages} onClick={() => setPage((current) => current + 1)}>Next</button></div></div>}
     </section>
   )

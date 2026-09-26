@@ -888,6 +888,186 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await other.aclose()
 
+    async def test_organization_task_list_is_private_filtered_paginated_and_includes_all_states(self):
+        outsider = await self.new_registered_client("org-task-outsider@example.com")
+        try:
+            async with SessionLocal() as session:
+                other_user = User(email="other-org-owner@example.com")
+                other_org = Organization(name="Other task org", slug="other-task-org")
+                session.add_all([other_user, other_org])
+                await session.flush()
+                session.add(OrganizationMember(
+                    organization_id=other_org.id,
+                    user_id=other_user.id,
+                    role=OrganizationMemberRole.OWNER,
+                ))
+                states = [
+                    (TaskStatus.DRAFT, TaskPublicationStatus.UNPUBLISHED),
+                    (TaskStatus.CLARIFYING, TaskPublicationStatus.UNPUBLISHED),
+                    (TaskStatus.CARD_READY, TaskPublicationStatus.UNPUBLISHED),
+                    (TaskStatus.CONFIRMED, TaskPublicationStatus.PUBLISHED),
+                    (TaskStatus.CONFIRMED, TaskPublicationStatus.UNPUBLISHED),
+                    (TaskStatus.CONFIRMED, TaskPublicationStatus.ARCHIVED),
+                ]
+                tasks = [
+                    Task(
+                        title=f"Private lifecycle item {index}",
+                        context=f"context token-{index}",
+                        need="alpha need" if task_status == TaskStatus.CLARIFYING else "ordinary need",
+                        topic="search-topic" if task_status == TaskStatus.CARD_READY else "general",
+                        status=task_status,
+                        publication_status=publication_status,
+                        organization_id=self.business_org.id,
+                        rating_score=index * 10,
+                        readiness_level="working",
+                    )
+                    for index, (task_status, publication_status) in enumerate(states, 1)
+                ]
+                other_task = Task(
+                    title="Cross organization secret needle",
+                    status=TaskStatus.CLARIFYING,
+                    publication_status=TaskPublicationStatus.UNPUBLISHED,
+                    organization_id=other_org.id,
+                )
+                session.add_all([*tasks, other_task])
+                await session.commit()
+
+            anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+            try:
+                self.assertEqual((await anonymous.get(f"/api/v1/organizations/{self.business_org.id}/tasks")).status_code, 401)
+            finally:
+                await anonymous.aclose()
+
+            base = f"/api/v1/organizations/{self.business_org.id}/tasks"
+            self.assertEqual((await outsider[0].get(base)).status_code, 403)
+            self.assertEqual((await self.client.get("/api/v1/organizations/999999/tasks")).status_code, 404)
+
+            first = await self.client.get(base, params={"page": 1, "page_size": 2})
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(first.headers.get("Cache-Control"), "private, no-store")
+            self.assertEqual(first.json()["total"], 6)
+            self.assertEqual(first.json()["pages"], 3)
+            self.assertEqual(len(first.json()["items"]), 2)
+            second = await self.client.get(base, params={"page": 2, "page_size": 2})
+            self.assertTrue(set(item["id"] for item in first.json()["items"]).isdisjoint(
+                item["id"] for item in second.json()["items"]
+            ))
+            included = await self.client.get(base, params={"page_size": 100})
+            self.assertEqual({item["status"] for item in included.json()["items"]}, {state.value for state, _ in states})
+            self.assertIn("archived", {item["publication_status"] for item in included.json()["items"]})
+
+            filtered = await self.client.get(base, params={"status": "clarifying", "publication_status": "unpublished", "q": "alpha", "sort": "oldest"})
+            self.assertEqual(filtered.json()["total"], 1)
+            self.assertEqual(filtered.json()["items"][0]["need"], "alpha need")
+            topic_search = await self.client.get(base, params={"q": "search-topic"})
+            self.assertEqual(topic_search.json()["total"], 1)
+            leaked = await self.client.get(base, params={"q": "Cross organization secret needle"})
+            self.assertEqual(leaked.json()["total"], 0)
+            archived = await self.client.get(base, params={"publication_status": "archived"})
+            self.assertEqual(archived.json()["total"], 1)
+            self.assertNotIn("Cross organization secret needle", [item["title"] for item in included.json()["items"]])
+            self.assertEqual((await self.client.get(base, params={"sort": "unknown"})).status_code, 422)
+        finally:
+            await outsider[0].aclose()
+
+    async def test_private_task_questions_restore_answers_only_for_org_members(self):
+        outsider, _ = await self.new_registered_client("question-outsider@example.com")
+        try:
+            async with SessionLocal() as session:
+                task = Task(
+                    title="Question restore task",
+                    status=TaskStatus.CLARIFYING,
+                    publication_status=TaskPublicationStatus.UNPUBLISHED,
+                    organization_id=self.business_org.id,
+                )
+                legacy = Task(title="Ownerless private", status=TaskStatus.CLARIFYING)
+                session.add_all([task, legacy])
+                await session.flush()
+                question = ClarifyingQuestion(
+                    task_id=task.id,
+                    question_text="What is already known?",
+                    answer_text="Existing answer",
+                    order=2,
+                )
+                session.add_all([
+                    question,
+                    ClarifyingQuestion(task_id=task.id, question_text="First question", answer_text=None, order=1),
+                    ClarifyingQuestion(task_id=legacy.id, question_text="Legacy question", order=1),
+                ])
+                task_id, legacy_id = task.id, legacy.id
+                await session.commit()
+
+            anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+            try:
+                self.assertEqual((await anonymous.get(f"/api/v1/tasks/{task_id}/questions")).status_code, 401)
+            finally:
+                await anonymous.aclose()
+            allowed = await self.client.get(f"/api/v1/tasks/{task_id}/questions")
+            self.assertEqual(allowed.status_code, 200, allowed.text)
+            self.assertEqual(allowed.headers.get("Cache-Control"), "private, no-store")
+            self.assertEqual([item["order"] for item in allowed.json()], [1, 2])
+            self.assertEqual(allowed.json()[1]["answer_text"], "Existing answer")
+            task_read = await self.client.get(f"/api/v1/tasks/{task_id}")
+            self.assertEqual(task_read.status_code, 200, task_read.text)
+            self.assertNotIn("questions", task_read.json())
+            self.assertNotIn("answer_text", task_read.json())
+            self.assertEqual((await outsider.get(f"/api/v1/tasks/{task_id}/questions")).status_code, 403)
+            self.assertEqual((await self.client.get("/api/v1/tasks/999999/questions")).status_code, 404)
+            self.assertEqual((await self.client.get(f"/api/v1/tasks/{legacy_id}/questions")).status_code, 403)
+        finally:
+            await outsider.aclose()
+
+    async def test_my_proposals_only_returns_current_submitter_with_status_pagination_and_safe_fields(self):
+        other, other_data = await self.new_registered_client("proposal-history-other@example.com")
+        try:
+            async with SessionLocal() as session:
+                team = Team(name="Shared history team")
+                second_team = Team(name="Other history team")
+                task = Task(
+                    title="Public proposal task",
+                    status=TaskStatus.CONFIRMED,
+                    publication_status=TaskPublicationStatus.PUBLISHED,
+                    organization_id=self.business_org.id,
+                )
+                session.add_all([team, second_team, task])
+                await session.flush()
+                session.add_all([
+                    TeamMember(team_id=team.id, user_id=self.business_user.id, role=TeamMemberRole.OWNER),
+                    TeamMember(team_id=team.id, user_id=other_data["id"], role=TeamMemberRole.MEMBER),
+                    TeamMember(team_id=second_team.id, user_id=other_data["id"], role=TeamMemberRole.OWNER),
+                    Proposal(task_id=task.id, team_id=team.id, submitted_by_user_id=self.business_user.id, idea="My pending idea"),
+                    Proposal(task_id=task.id, team_id=second_team.id, submitted_by_user_id=self.business_user.id, idea="My accepted idea", status=ProposalStatus.ACCEPTED),
+                    Proposal(task_id=task.id, team_id=team.id, submitted_by_user_id=other_data["id"], idea="Other member on my team"),
+                ])
+                await session.commit()
+
+            base = "/api/v1/proposals/mine"
+            anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+            try:
+                self.assertEqual((await anonymous.get(base)).status_code, 401)
+            finally:
+                await anonymous.aclose()
+            all_mine = await self.client.get(base, params={"page_size": 1})
+            self.assertEqual(all_mine.status_code, 200, all_mine.text)
+            self.assertEqual(all_mine.headers.get("Cache-Control"), "private, no-store")
+            self.assertEqual(all_mine.json()["total"], 2)
+            self.assertEqual(all_mine.json()["pages"], 2)
+            self.assertEqual(set(all_mine.json()["items"][0]), {
+                "id", "task_id", "team_id", "idea", "plan", "deadline", "link", "status", "created_at",
+            })
+            own_ideas = set()
+            for page in (1, 2):
+                response = await self.client.get(base, params={"page": page, "page_size": 1})
+                own_ideas.update(item["idea"] for item in response.json()["items"])
+            self.assertEqual(own_ideas, {"My pending idea", "My accepted idea"})
+            self.assertNotIn("Other member on my team", own_ideas)
+            accepted = await self.client.get(base, params={"status": "accepted"})
+            self.assertEqual(accepted.json()["total"], 1)
+            self.assertEqual(accepted.json()["items"][0]["idea"], "My accepted idea")
+            self.assertEqual((await self.client.get(base, params={"status": "unknown"})).status_code, 422)
+        finally:
+            await other.aclose()
+
     async def test_task_mutations_require_organization_membership_and_keep_catalog_public(self):
         task_data = await self.create_task(topic="Authorization test")
         task_id = task_data["task"]["id"]

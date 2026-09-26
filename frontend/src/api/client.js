@@ -1,6 +1,14 @@
 const API_BASE = '/api/v1'
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
+export function buildQueryString(values = {}) {
+  const query = new URLSearchParams()
+  Object.entries(values).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
+  })
+  return query.toString()
+}
+
 export class ApiError extends Error {
   constructor(message, status, details = null) {
     super(message)
@@ -52,6 +60,9 @@ export async function request(path, options = {}) {
       const body = await response.text()
       if (body) throw new ApiError('The server returned an unexpected response.', response.status)
     }
+  }
+  if (response.status === 401 && !path.startsWith('/auth/')) {
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('briefforge:session-expired'))
   }
   if (!response.ok) throw new ApiError(errorMessage(payload, response), response.status, payload)
   return payload
