@@ -219,6 +219,10 @@ The server creates the team and its initial `owner` membership for the current u
 
 The versioned `GET /api/v1/teams` supports `page`, `page_size`, and `q`. Search is trimmed and case-insensitively checks name, interests, skills, and technologies. Its response is paginated. The unversioned route keeps its array response. Both contain only public profile fields; membership and account data are not returned.
 
+### `GET /teams/mine` — authenticated
+
+Available as `GET /api/v1/teams/mine?page=1&page_size=20`. Returns a paginated list of only the current user's team memberships, using the same safe public `Team` profile fields as the public catalog. This route is used when selecting a team for proposal submission; public team browsing does not imply membership. Missing or invalid sessions return `401`.
+
 ### `GET /teams/{id}` — public
 
 Also available as `GET /api/v1/teams/{id}`. Returns the same safe `TeamRead` profile as the list. Missing teams return `404`.

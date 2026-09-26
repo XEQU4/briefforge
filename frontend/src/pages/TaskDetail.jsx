@@ -1,131 +1,117 @@
 import { useEffect, useState } from 'react'
-import { createProposal, listProposals, updateProposal } from '../api/proposals'
-import { getTaskRating } from '../api/tasks'
-import { createTeam, listTeams } from '../api/teams'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
+import { useAuth } from '../auth/AuthContext'
+import { createProposal } from '../api/proposals'
+import { getTask, getTaskRating } from '../api/tasks'
+import { listMyTeams } from '../api/teams'
 import ReadinessScore from '../components/ReadinessScore'
 import { EmptyState, LoadingState } from '../components/StatePanel'
 
-const detailFields = ['title', 'context', 'need', 'users', 'data_materials', 'constraints', 'expected_result', 'success_criteria', 'contact', 'interaction_format', 'topic']
-const fieldLabels = { title: 'Title', context: 'Context', need: 'Business need', users: 'Users', data_materials: 'Data and materials', constraints: 'Constraints', expected_result: 'Expected result', success_criteria: 'Success criteria', contact: 'Contact', interaction_format: 'Interaction format', topic: 'Topic' }
-const emptyProposal = { team_id: '', idea: '', plan: '', deadline: '', link: '' }
-const emptyTeam = { name: '', interests: '', skills: '', technologies: '' }
+const fields = [
+  ['context', 'Context'], ['need', 'Business need'], ['users', 'Users'],
+  ['data_materials', 'Data and materials'], ['constraints', 'Constraints'],
+  ['expected_result', 'Expected result'], ['success_criteria', 'Success criteria'],
+  ['contact', 'Contact'], ['interaction_format', 'Interaction format'],
+]
+const EMPTY_FORM = { team_id: '', idea: '', plan: '', deadline: '', link: '' }
 
-export default function TaskDetail({ task, taskId, role = 'business' }) {
-  const id = taskId || task?.id
-  const [proposals, setProposals] = useState([])
-  const [teams, setTeams] = useState([])
+export default function TaskDetail() {
+  const { taskId } = useParams()
+  const { authenticated, loading: authLoading, refreshUser } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [task, setTask] = useState(null)
   const [rating, setRating] = useState(null)
-  const [form, setForm] = useState(emptyProposal)
-  const [teamForm, setTeamForm] = useState(emptyTeam)
-  const [loading, setLoading] = useState(false)
-  const [ratingLoading, setRatingLoading] = useState(true)
-  const [teamsLoading, setTeamsLoading] = useState(true)
+  const [teams, setTeams] = useState([])
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [loading, setLoading] = useState(true)
+  const [teamsLoading, setTeamsLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [teamCreating, setTeamCreating] = useState(false)
-  const [pendingAction, setPendingAction] = useState(null)
-  const [success, setSuccess] = useState('')
-  const [teamSuccess, setTeamSuccess] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
+  const [ratingError, setRatingError] = useState('')
   const [proposalError, setProposalError] = useState('')
-  const [teamsError, setTeamsError] = useState('')
-  const [teamCreateError, setTeamCreateError] = useState('')
+  const [success, setSuccess] = useState('')
 
   useEffect(() => {
-    if (!id) return
     let active = true
-    setRatingLoading(true)
-    getTaskRating(id).then((score) => { if (active) setRating(score) }).catch((reason) => { if (active) setError(reason.message) }).finally(() => { if (active) setRatingLoading(false) })
+    setLoading(true)
+    setError(null)
+    getTask(taskId).then((value) => {
+      if (!active) return
+      setTask(value)
+      getTaskRating(taskId).then((score) => { if (active) setRating(score) }).catch((reason) => { if (active) setRatingError(reason.message) })
+    }).catch(async (reason) => {
+      if (!active) return
+      if (reason.status === 401) {
+        try { await refreshUser() } catch {}
+        if (active) navigate('/login', { replace: true, state: { from: location } })
+      } else setError(reason)
+    }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [id])
+  }, [taskId, navigate, location, refreshUser])
 
   useEffect(() => {
-    if (!id || role !== 'business') { setLoading(false); return }
+    if (!authenticated) { setTeams([]); setTeamsLoading(false); return undefined }
     let active = true
-    setLoading(true); setProposalError('')
-    listProposals(id).then((items) => { if (active) setProposals(items) }).catch((reason) => { if (active) setProposalError(reason.message) }).finally(() => { if (active) setLoading(false) })
+    setTeamsLoading(true)
+    listMyTeams().then((value) => { if (active) setTeams(value.items) }).catch((reason) => { if (active) setProposalError(reason.message) }).finally(() => { if (active) setTeamsLoading(false) })
     return () => { active = false }
-  }, [id, role])
-
-  useEffect(() => {
-    if (!id) return
-    let active = true
-    setTeamsLoading(true); setTeamsError('')
-    listTeams().then((items) => { if (active) setTeams((current) => { const merged = new Map(items.map((team) => [team.id, team])); current.forEach((team) => merged.set(team.id, team)); return [...merged.values()] }) }).catch((reason) => { if (active) setTeamsError(reason.message) }).finally(() => { if (active) setTeamsLoading(false) })
-    return () => { active = false }
-  }, [id])
-
-  if (!id) return <div className="feedback feedback-error" role="alert">Task id is missing.</div>
-
-  const teamNames = new Map(teams.map((team) => [team.id, team.name]))
+  }, [authenticated])
 
   async function submitProposal(event) {
-    event.preventDefault(); setSubmitting(true); setError(''); setSuccess('')
+    event.preventDefault()
+    setSubmitting(true)
+    setProposalError('')
+    setSuccess('')
     try {
-      const value = await createProposal(id, { ...form, team_id: Number(form.team_id), plan: form.plan || null, deadline: form.deadline || null, link: form.link || null })
-      setProposals((current) => [...current, value]); setForm(emptyProposal); setSuccess('Proposal submitted. Switch to Business view to review it.')
-    } catch (reason) { setError(reason.message) } finally { setSubmitting(false) }
+      await createProposal(taskId, {
+        ...form,
+        team_id: Number(form.team_id),
+        plan: form.plan || null,
+        deadline: form.deadline || null,
+        link: form.link || null,
+      })
+      setForm(EMPTY_FORM)
+      setSuccess('Proposal submitted. The organization can now review it.')
+    } catch (reason) {
+      if (reason.status === 401) setProposalError('Your session expired. Log in again to submit this proposal.')
+      else setProposalError(reason.message)
+    } finally { setSubmitting(false) }
   }
 
-  async function submitTeam(event) {
-    event.preventDefault(); setTeamCreating(true); setTeamCreateError(''); setTeamSuccess('')
-    try {
-      const created = await createTeam({ name: teamForm.name, interests: teamForm.interests || null, skills: teamForm.skills || null, technologies: teamForm.technologies || null })
-      setTeams((current) => [...current.filter((team) => team.id !== created.id), created])
-      setForm((current) => ({ ...current, team_id: String(created.id) }))
-      setTeamForm(emptyTeam); setTeamsError(''); setTeamSuccess(`Team “${created.name}” created and selected.`)
-    } catch (reason) { setTeamCreateError(reason.message) } finally { setTeamCreating(false) }
-  }
-
-  async function setStatus(proposal, status) {
-    setPendingAction(proposal.id); setError('')
-    try {
-      const value = await updateProposal(proposal.id, status)
-      setProposals((current) => current.map((item) => item.id === value.id ? value : item)); setSuccess(`Proposal ${status}.`)
-    } catch (reason) { setError(reason.message) } finally { setPendingAction(null) }
-  }
+  if (loading) return <section className="page"><LoadingState title="Loading task" /></section>
+  if (error?.status === 404) return <section className="page"><EmptyState title="Task not found" description="This task may have been removed or is no longer available." action={<Link to="/tasks">Browse tasks</Link>} /></section>
+  if (error?.status === 403) return <section className="page"><div className="feedback feedback-error" role="alert"><strong>You do not have access to this task.</strong><span>Ask an organization member to share it with you.</span></div></section>
+  if (error) return <section className="page"><div className="feedback feedback-error" role="alert">Unable to load task: {error.message}</div></section>
 
   return (
     <section className="page detail-page">
+      <Link to="/tasks" className="back-link">← Back to tasks</Link>
       <header className="detail-hero">
-        <div className="detail-title"><div className="card-topline"><span className="task-id">TASK {String(id).padStart(2, '0')}</span>{task?.topic && <span className="status-badge topic-badge">{task.topic}</span>}</div><h1>{task?.title || `Task #${id}`}</h1><p>{task?.need || task?.context || 'Open the task card to review the business challenge and available context.'}</p></div>
-        <div className="detail-rating">{ratingLoading ? <LoadingState compact lines={2} /> : <ReadinessScore task={task} rating={rating} />}</div>
+        <div className="detail-title"><div className="card-topline"><span className="task-id">TASK {String(task.id).padStart(2, '0')}</span>{task.topic && <span className="status-badge topic-badge">{task.topic}</span>}</div><h1>{task.title || `Task #${task.id}`}</h1><p>{task.need || task.context || 'Review the business challenge and available context.'}</p></div>
+        <div className="detail-rating">{rating ? <ReadinessScore task={task} rating={rating} /> : ratingError ? <div className="muted">Rating unavailable: {ratingError}</div> : <LoadingState compact lines={2} title="Loading rating" />}</div>
       </header>
+      <div className="section-heading"><div><span className="eyebrow">Brief overview</span><h2>Task information</h2></div><span className="section-note">Published challenge</span></div>
+      <div className="detail-grid">{fields.map(([key, label]) => <article className={task[key] ? '' : 'is-empty'} key={key}><h3>{label}</h3><p>{task[key] || 'Not provided.'}</p></article>)}</div>
 
-      {error && <div className="feedback feedback-error" role="alert"><strong>Request failed</strong><span>{error}</span></div>}
-      {success && <div className="feedback feedback-success" role="status"><strong>Done</strong><span>{success}</span></div>}
-
-      <div className="section-heading"><div><span className="eyebrow">Brief overview</span><h2>Task information</h2></div><span className="section-note">Confirmed business context</span></div>
-      <div className="detail-grid">{detailFields.map((field) => <article className={task?.[field] ? '' : 'is-empty'} key={field}><h3>{fieldLabels[field]}</h3><p>{task?.[field] || 'Not provided.'}</p></article>)}</div>
-
-      {role === 'student' && (
-        <div className="workspace-grid student-workspace">
-          <form className="form-panel feature-panel" onSubmit={submitProposal}>
-            <div className="panel-heading"><span className="eyebrow">Student workspace</span><h2>Submit a proposal</h2><p>Choose your team and outline a concrete approach. The business makes the final decision.</p></div>
-            {teamsLoading && <LoadingState compact lines={2} title="Loading teams" />}
-            {teamsError && <div className="feedback feedback-error" role="alert">Teams could not be loaded: {teamsError}</div>}
-            {!teamsLoading && !teamsError && teams.length === 0 && <div className="inline-empty">No teams are available yet. Create one in the panel beside this form.</div>}
-            <label>Team<select required disabled={teamsLoading || teams.length === 0} value={form.team_id} onChange={(event) => setForm({ ...form, team_id: event.target.value })}><option value="">Select a team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-            <label>Solution idea<textarea required placeholder="Describe the core idea and why it fits the brief..." value={form.idea} onChange={(event) => setForm({ ...form, idea: event.target.value })} /></label>
-            <label>Plan<textarea placeholder="Outline the main delivery steps..." value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })} /></label>
-            <div className="form-grid"><label>Deadline<input placeholder="e.g. 3 days" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} /></label><label>Prototype link<input type="url" placeholder="https://..." value={form.link} onChange={(event) => setForm({ ...form, link: event.target.value })} /></label></div>
-            <div className="form-footer"><span className="form-hint">You can retry safely if submission fails.</span><button disabled={submitting || teamsLoading || teams.length === 0 || !form.team_id}>{submitting ? 'Submitting…' : 'Submit proposal'}</button></div>
-          </form>
-
-          <section className="feature-panel team-creation"><div className="panel-heading"><span className="eyebrow">Team profile</span><h2>Create a team</h2><p>Not listed yet? Create a lightweight demo profile and it will be selected automatically.</p></div>{teamCreateError && <div className="feedback feedback-error" role="alert">{teamCreateError}</div>}{teamSuccess && <div className="feedback feedback-success" role="status">{teamSuccess}</div>}<form onSubmit={submitTeam}><label>Name<input required placeholder="Cyber Owls" value={teamForm.name} onChange={(event) => setTeamForm({ ...teamForm, name: event.target.value })} /></label><label>Interests<input placeholder="AI, education, automation" value={teamForm.interests} onChange={(event) => setTeamForm({ ...teamForm, interests: event.target.value })} /></label><label>Skills<input placeholder="Research, frontend, backend" value={teamForm.skills} onChange={(event) => setTeamForm({ ...teamForm, skills: event.target.value })} /></label><label>Technologies<input placeholder="React, FastAPI, Python" value={teamForm.technologies} onChange={(event) => setTeamForm({ ...teamForm, technologies: event.target.value })} /></label><button className="secondary" disabled={teamCreating}>{teamCreating ? 'Creating…' : 'Create & select team'}</button></form></section>
-        </div>
-      )}
-
-      {role === 'business' && (
-        <section className="proposal-section">
-          <div className="section-heading"><div><span className="eyebrow">Business workspace</span><h2>Team proposals</h2></div><span className="section-note">Manual decision only</span></div>
-          {teamsLoading && <p className="muted">Loading team names…</p>}
-          {teamsError && <p className="muted">Team names are unavailable; proposal IDs are shown instead.</p>}
+      {!authenticated && !authLoading && <div className="feature-panel proposal-invite"><span className="eyebrow">Interested in this challenge?</span><h2>Sign in to submit a proposal.</h2><p>Proposal submission is available to authenticated members of a team.</p><Link className="small-primary-link" to="/login" state={{ from: location }}>Log in to continue</Link></div>}
+      {authenticated && <div className="workspace-grid student-workspace">
+        <form className="form-panel feature-panel" onSubmit={submitProposal}>
+          <div className="panel-heading"><span className="eyebrow">Team workspace</span><h2>Submit a proposal</h2><p>Choose one of your teams and outline a concrete approach. The organization makes the final decision.</p></div>
           {proposalError && <div className="feedback feedback-error" role="alert">{proposalError}</div>}
-          {loading && <div className="proposal-grid"><LoadingState /><LoadingState /></div>}
-          {!loading && !proposalError && proposals.length === 0 && <EmptyState title="No proposals yet" description="Switch to Student view on this page to submit a proposal, then return to Business view to review it." />}
-          {!loading && proposals.length > 0 && <ul className="card-list proposal-grid">{proposals.map((proposal) => <li className="proposal-card" key={proposal.id}><div className="card-topline"><span className="proposal-team">{teamNames.get(proposal.team_id) || `Team #${proposal.team_id}`}</span><span className={`status-badge status-${proposal.status}`}>{proposal.status}</span></div><h3>{proposal.idea}</h3><p>{proposal.plan || 'No plan provided.'}</p><div className="proposal-meta">{proposal.deadline && <span>Deadline · {proposal.deadline}</span>}{proposal.link && <a href={proposal.link} target="_blank" rel="noreferrer">Open prototype ↗</a>}</div>{proposal.status === 'pending' && <div className="button-row"><button disabled={pendingAction === proposal.id} onClick={() => setStatus(proposal, 'accepted')}>{pendingAction === proposal.id ? 'Updating…' : 'Accept proposal'}</button><button className="danger-ghost" disabled={pendingAction === proposal.id} onClick={() => setStatus(proposal, 'rejected')}>Reject</button></div>}</li>)}</ul>}
-        </section>
-      )}
+          {success && <div className="feedback feedback-success" role="status">{success}</div>}
+          {teamsLoading && <LoadingState compact lines={2} title="Loading your teams" />}
+          {!teamsLoading && !teams.length && <EmptyState title="No team memberships found" description="Create a team profile first. Public team listings do not establish membership." action={<Link to="/teams">Browse or create a team</Link>} />}
+          {teams.length > 0 && <>
+            <label>Team<select required value={form.team_id} onChange={(event) => setForm({ ...form, team_id: event.target.value })}><option value="">Select your team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+            <label>Solution idea<textarea required value={form.idea} onChange={(event) => setForm({ ...form, idea: event.target.value })} placeholder="Describe the core idea and why it fits the brief..." /></label>
+            <label>Plan<textarea value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })} placeholder="Outline the main delivery steps..." /></label>
+            <div className="form-grid"><label>Deadline<input value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} placeholder="e.g. 3 days" /></label><label>Prototype link<input type="url" value={form.link} onChange={(event) => setForm({ ...form, link: event.target.value })} placeholder="https://..." /></label></div>
+            <div className="form-footer"><span className="form-hint">Your team membership is checked by the backend.</span><button disabled={submitting || teamsLoading || !form.team_id}>{submitting ? 'Submitting…' : 'Submit proposal'}</button></div>
+          </>}
+        </form>
+        <aside className="feature-panel team-creation"><div className="panel-heading"><span className="eyebrow">Team profile</span><h2>Need a team?</h2><p>Create a team profile and you’ll automatically become its owner.</p><Link to="/teams">Browse and manage teams</Link></div></aside>
+      </div>}
     </section>
   )
 }

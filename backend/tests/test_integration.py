@@ -864,6 +864,30 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await bob.aclose()
             await anonymous.aclose()
 
+    async def test_my_teams_returns_only_current_memberships_and_safe_paginated_profiles(self):
+        mine = await self.client.post("/api/v1/teams", json={"name": "Owned catalog team", "skills": "Research"})
+        self.assertEqual(mine.status_code, 201, mine.text)
+        other, _ = await self.new_registered_client("my-teams-other@example.com")
+        try:
+            other_team = await other.post("/api/v1/teams", json={"name": "Other member team"})
+            self.assertEqual(other_team.status_code, 201, other_team.text)
+
+            anonymous = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+            try:
+                self.assertEqual((await anonymous.get("/api/v1/teams/mine")).status_code, 401)
+            finally:
+                await anonymous.aclose()
+
+            response = await self.client.get("/api/v1/teams/mine", params={"page": 1, "page_size": 1})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(set(response.json()), {"items", "page", "page_size", "total", "pages"})
+            self.assertEqual(response.json()["total"], 1)
+            self.assertEqual([team["id"] for team in response.json()["items"]], [mine.json()["id"]])
+            self.assertEqual(set(response.json()["items"][0]), {"id", "name", "interests", "skills", "technologies"})
+            self.assertNotIn(other_team.json()["id"], [team["id"] for team in response.json()["items"]])
+        finally:
+            await other.aclose()
+
     async def test_task_mutations_require_organization_membership_and_keep_catalog_public(self):
         task_data = await self.create_task(topic="Authorization test")
         task_id = task_data["task"]["id"]

@@ -70,6 +70,20 @@ async def list_teams_v1(
     return await _list_teams(versioned=True, q=q, page=page, page_size=page_size, db=db)
 
 
+@router.get("/teams/mine", response_model=PaginatedResponse[TeamRead])
+async def list_my_teams(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    filters = [TeamMember.user_id == user.id]
+    query = select(Team).join(TeamMember).where(*filters).order_by(Team.name, Team.id)
+    total = await db.scalar(select(func.count()).select_from(Team).join(TeamMember).where(*filters)) or 0
+    result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
+    return PaginatedResponse[TeamRead].build(list(result.scalars().all()), page, page_size, total)
+
+
 @router.get("/teams/{team_id}", response_model=TeamRead)
 async def get_team(team_id: int, db: AsyncSession = Depends(get_db)):
     team = await db.get(Team, team_id)

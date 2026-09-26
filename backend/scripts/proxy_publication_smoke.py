@@ -21,6 +21,8 @@ async def main() -> None:
     async with httpx.AsyncClient(base_url=base, timeout=45) as business, httpx.AsyncClient(base_url=base, timeout=45) as student:
         require(await business.post("/api/v1/auth/register", json={"email": f"proxy-business-{suffix}@example.com", "password": "Valid proxy test password 123!"}), 201)
         require(await student.post("/api/v1/auth/register", json={"email": f"proxy-student-{suffix}@example.com", "password": "Valid proxy test password 123!"}), 201)
+        require(await business.get("/api/v1/auth/me"), 200)
+        require(await business.get("/api/v1/tasks"), 200)
         for client in (business, student):
             csrf = client.cookies.get("briefforge_csrf")
             assert csrf, "registration did not provide a CSRF cookie"
@@ -28,6 +30,8 @@ async def main() -> None:
 
         organization = require(await business.post("/api/v1/organizations", json={"name": "Proxy smoke", "slug": f"proxy-smoke-{suffix}"}), 201).json()
         team = require(await student.post("/api/v1/teams", json={"name": "Proxy smoke team"}), 201).json()
+        my_teams = require(await student.get("/api/v1/teams/mine"), 200).json()
+        assert [item["id"] for item in my_teams["items"]] == [team["id"]]
         created = require(await business.post("/api/v1/tasks", json={"draft_text": "A business needs a structured project challenge", "organization_id": organization["id"]}), 201).json()
         task_id = created["task"]["id"]
         require(await business.patch(f"/api/v1/tasks/{task_id}/answers", json={"answers": ["Clarify the business need", "Student teams", "A usable deliverable"]}), 200)

@@ -50,14 +50,41 @@ a:hover { color: #d2ceff; }
 .brand-copy strong { font-size:.9rem; }
 .brand-copy small { color:var(--dim); font-size:.68rem; }
 .nav-links { display:flex; gap:4px; }
+.account-nav { display:flex; align-items:center; justify-content:flex-end; gap:10px; }
+.account-label { max-width:230px; overflow:hidden; color:var(--muted); font-size:.8rem; text-overflow:ellipsis; white-space:nowrap; }
+.small-primary-link { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:10px 14px; border:1px solid rgba(124,108,255,.35); border-radius:11px; background:linear-gradient(135deg,#7567f8,#5f63ed); color:#fff; font-weight:750; text-decoration:none; box-shadow:0 8px 22px rgba(79,67,204,.2); }
+.small-primary-link:hover { color:#fff; filter:brightness(1.08); }
 .nav-button { padding:9px 12px; border:1px solid transparent; border-radius:11px; background:transparent; color:var(--muted); box-shadow:none; font-weight:700; }
 .nav-button:hover { color:var(--text); background:rgba(255,255,255,.05); box-shadow:none; }
-.nav-button[data-active="true"] { color:#fff; background:rgba(255,255,255,.075); border-color:var(--border); }
-.role-switch { display:flex; align-items:center; gap:9px; }
-.role-switch>span { color:var(--dim); font-size:.7rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-.segmented-control { display:flex; gap:3px; padding:3px; border:1px solid var(--border); border-radius:12px; background:rgba(255,255,255,.05); }
-.segmented-control button { padding:7px 10px; border:0; border-radius:9px; background:transparent; color:var(--muted); box-shadow:none; font-size:.8rem; }
-.segmented-control button[aria-pressed="true"] { color:#fff; background:linear-gradient(135deg,#7567f8,#5f63ed); box-shadow:0 6px 18px rgba(79,67,204,.26); }
+.nav-button.is-active { color:#fff; background:rgba(255,255,255,.075); border-color:var(--border); }
+.shell-notice { display:flex; align-items:center; gap:14px; margin-top:14px; }
+.shell-notice .button-row { margin-left:auto; }
+.text-button { padding:6px 8px; border:0; background:transparent; color:var(--muted); box-shadow:none; text-decoration:underline; }
+.text-button:hover { color:#fff; background:transparent; box-shadow:none; }
+.auth-page { display:grid; place-items:center; }
+.auth-panel { width:min(100%,540px); padding:32px; }
+.auth-panel h1 { font-size:clamp(2rem,5vw,3.2rem); }
+.auth-form,.compact-form { display:grid; gap:16px; padding:0; border:0; background:transparent; box-shadow:none; }
+.auth-alternative { margin:22px 0 0; }
+.account-summary { display:grid; gap:8px; align-content:center; min-width:220px; padding:22px; border:1px solid var(--border); border-radius:var(--radius-lg); }
+.account-summary span { color:var(--dim); font-size:.75rem; }
+.organization-picker { display:grid; gap:14px; }
+.organization-picker .empty-state { min-height:120px; }
+.organization-picker .compact-form { margin-top:4px; }
+.draft-flow-column { display:grid; gap:20px; }
+.team-create-form { display:grid; gap:16px; margin:20px 0 26px; }
+.team-filters { grid-template-columns:minmax(240px,1fr) auto; align-items:end; }
+.team-profile-meta { display:grid; gap:8px; margin:4px 0 18px; color:var(--muted); font-size:.82rem; }
+.team-profile-meta strong { color:var(--dim); }
+.pagination-controls { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:22px 0 4px; color:var(--muted); font-size:.86rem; }
+.pagination-controls .button-row { margin:0; }
+.back-link { display:inline-block; margin-bottom:20px; }
+.proposal-invite,.publication-panel { display:grid; gap:12px; margin:28px 0; padding:24px; border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--panel); }
+.publication-panel { grid-template-columns:1fr auto; align-items:center; }
+.publication-panel p { margin:0; }
+.publication-panel .feedback { grid-column:1/-1; }
+.publication-actions { justify-content:flex-end; }
+.team-detail-page .small-primary-link { margin-top:28px; }
 
 h1,h2,h3,p { margin-top:0; }
 h1 { margin-bottom:16px; font-size:clamp(2.1rem,5vw,4.4rem); line-height:.98; letter-spacing:-.055em; font-weight:780; }
@@ -273,7 +300,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 
 @media (max-width:1050px) {
   .topbar { grid-template-columns:auto 1fr; }
-  .role-switch { grid-column:1/-1; justify-content:space-between; padding-top:9px; border-top:1px solid var(--border); }
+  .account-nav { grid-column:1/-1; justify-content:space-between; padding-top:9px; border-top:1px solid var(--border); }
   .filters-panel { grid-template-columns:repeat(3,1fr); }
   .filter-copy { grid-column:1/-1; }
   .task-card { grid-column:span 6; }
@@ -288,13 +315,17 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .topbar { top:8px; grid-template-columns:1fr auto; gap:8px; border-radius:18px; }
   .brand-copy small { display:none; }
   .nav-links { grid-column:1/-1; grid-row:2; width:100%; padding-top:7px; border-top:1px solid var(--border); }
-  .role-switch { grid-column:auto; grid-row:1; padding:0; border:0; }
-  .role-switch>span { display:none; }
+  .account-nav { grid-column:auto; grid-row:1; padding:0; border:0; }
+  .account-label { display:none; }
   .page { margin-top:26px; }
   .bento-hero,.split-header,.detail-hero,.two-column-layout { grid-template-columns:1fr; }
   .hero-copy { padding:24px 0 8px; }
   .hero-stat { min-height:150px; }
   .filters-panel { grid-template-columns:1fr; }
+  .team-filters { grid-template-columns:1fr; }
+  .publication-panel { grid-template-columns:1fr; }
+  .pagination-controls { align-items:stretch; flex-direction:column; }
+  .auth-panel { padding:22px; }
   .filter-copy { grid-column:auto; }
   .task-card,.task-card:first-child,.skeleton-grid .state-panel { grid-column:span 12; }
   .field-grid,.form-grid,.editor-sidebar,.proposal-grid { grid-template-columns:1fr; }
@@ -310,7 +341,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .app-shell { width:min(100% - 16px,1240px); }
   .topbar { padding:8px; }
   .brand-copy strong { font-size:.8rem; }
-  .segmented-control button { padding:7px 8px; font-size:.74rem; }
   h1 { font-size:clamp(2rem,12vw,3rem); }
   .feature-panel,.side-note { padding:18px; border-radius:17px; }
   .section-heading,.proposal-meta,.button-row { align-items:stretch; flex-direction:column; }
