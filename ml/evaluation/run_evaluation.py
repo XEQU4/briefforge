@@ -30,7 +30,9 @@ def evaluate() -> tuple[dict[str, object], int]:
         "flow_errors": [],
     }
 
-    with patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False):
+    with patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False), patch.object(
+        main, "OpenAI", side_effect=AssertionError("Provider calls are forbidden in offline evaluation")
+    ):
         with TestClient(main.app) as client:
             for case in cases:
                 case_id = case["id"]
@@ -42,7 +44,7 @@ def evaluate() -> tuple[dict[str, object], int]:
                     report["flow_errors"].append(f"{case_id}: question endpoint failed")
                     continue
                 questions = generated.json()
-                if len(questions) < 3 or len(set(questions)) != len(questions):
+                if len(questions) != 3 or len(set(questions)) != len(questions):
                     report["flow_errors"].append(f"{case_id}: questions are not three distinct prompts")
                     continue
 

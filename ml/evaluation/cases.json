@@ -4,17 +4,17 @@
       "id": "sparse-english-flow",
       "topic": "Clinic appointment reminders",
       "draft_text": "A dashboard could help clinic teams reduce missed appointments.",
-      "answers_by_field": {"users": "Clinic coordinators", "data_materials": "Weekly CSV appointment exports", "success_criteria": "Reduce missed appointments by 15%"},
-      "expected_fields": {"need": "A dashboard could help clinic teams reduce missed appointments.", "users": "Clinic coordinators", "data_materials": "Weekly CSV appointment exports", "success_criteria": "Reduce missed appointments by 15%"},
-      "expected_null_fields": ["context", "constraints", "expected_result"]
+      "answers_by_field": {"data_materials": "Weekly CSV appointment exports", "success_criteria": "Reduce missed appointments by 15%", "expected_result": "A prototype appointment reminder dashboard"},
+      "expected_fields": {"need": "A dashboard could help clinic teams reduce missed appointments.", "data_materials": "Weekly CSV appointment exports", "success_criteria": "Reduce missed appointments by 15%", "expected_result": "A prototype appointment reminder dashboard"},
+      "expected_null_fields": ["context", "constraints", "users"]
     },
     {
       "id": "sparse-russian-flow",
       "topic": "План занятий по робототехнике",
       "draft_text": "Нужен план занятий для школьного кружка робототехники.",
-      "answers_by_field": {"users": "Ученики 7–9 классов", "data_materials": "Список наборов и расписание кабинета", "success_criteria": "Не менее 80% учеников завершают проект"},
-      "expected_fields": {"need": "Нужен план занятий для школьного кружка робототехники.", "users": "Ученики 7–9 классов", "data_materials": "Список наборов и расписание кабинета", "success_criteria": "Не менее 80% учеников завершают проект"},
-      "expected_null_fields": ["context", "constraints", "expected_result"]
+      "answers_by_field": {"data_materials": "Список наборов и расписание кабинета", "success_criteria": "Не менее 80% учеников завершают проект", "expected_result": "План занятий по робототехнике на семестр"},
+      "expected_fields": {"need": "Нужен план занятий для школьного кружка робототехники.", "data_materials": "Список наборов и расписание кабинета", "success_criteria": "Не менее 80% учеников завершают проект", "expected_result": "План занятий по робототехнике на семестр"},
+      "expected_null_fields": ["context", "constraints", "users"]
     },
     {
       "id": "english-labelled-placeholders",
@@ -78,17 +78,17 @@
       "id": "misleading-english-topic-keywords",
       "topic": "Customer data requirements",
       "draft_text": "We need a better onboarding process.",
-      "answers_by_field": {"users": "Support analysts", "data_materials": "Approved CSV exports", "success_criteria": "At least 90% of users complete onboarding"},
-      "expected_fields": {"need": "We need a better onboarding process.", "users": "Support analysts", "data_materials": "Approved CSV exports", "success_criteria": "At least 90% of users complete onboarding"},
-      "expected_null_fields": ["context", "constraints", "expected_result"]
+      "answers_by_field": {"data_materials": "Approved CSV exports", "success_criteria": "At least 90% of users complete onboarding", "expected_result": "A prototype onboarding checklist"},
+      "expected_fields": {"need": "We need a better onboarding process.", "data_materials": "Approved CSV exports", "success_criteria": "At least 90% of users complete onboarding", "expected_result": "A prototype onboarding checklist"},
+      "expected_null_fields": ["context", "constraints", "users"]
     },
     {
       "id": "misleading-russian-topic-keywords",
       "topic": "Требования к данным пользователей",
       "draft_text": "Нужен более понятный процесс адаптации.",
-      "answers_by_field": {"users": "Специалисты поддержки", "data_materials": "Утвержденные CSV-файлы", "success_criteria": "Не менее 90% пользователей завершают адаптацию"},
-      "expected_fields": {"need": "Нужен более понятный процесс адаптации.", "users": "Специалисты поддержки", "data_materials": "Утвержденные CSV-файлы", "success_criteria": "Не менее 90% пользователей завершают адаптацию"},
-      "expected_null_fields": ["context", "constraints", "expected_result"]
+      "answers_by_field": {"data_materials": "Утвержденные CSV-файлы", "success_criteria": "Не менее 90% пользователей завершают адаптацию", "expected_result": "Прототип инструкции по адаптации"},
+      "expected_fields": {"need": "Нужен более понятный процесс адаптации.", "data_materials": "Утвержденные CSV-файлы", "success_criteria": "Не менее 90% пользователей завершают адаптацию", "expected_result": "Прототип инструкции по адаптации"},
+      "expected_null_fields": ["context", "constraints", "users"]
     },
     {
       "id": "placeholder-phrase-inside-substantive-answer",
