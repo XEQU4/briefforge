@@ -26,15 +26,14 @@ export default function TaskDraft() {
 
   return (
     <section className="page draft-page">
-      <header className="page-header split-header">
-        <div><span className="eyebrow">Business workspace</span><h1>Start with the problem, not the paperwork.</h1><p>Describe the need in your own words. The platform will identify what is missing and turn it into a clearer brief.</p></div>
-        <div className="mini-flow glass-panel" aria-label="Task creation flow"><span className="is-active">01 Draft</span><span>02 Clarify</span><span>03 Improve</span><span>04 Publish</span></div>
+      <header className="business-page-header">
+        <div><span className="eyebrow">Business workspace</span><h1>Create a challenge</h1><p>Describe your business need, then clarify the details and review your brief.</p></div>
+        <Link to={organizationId ? `/business?org=${organizationId}` : '/business'}>Back to workspace</Link>
       </header>
 
       <div className="two-column-layout">
         <div className="draft-flow-column">
           <div className="form-panel feature-panel">
-            <div className="panel-heading"><span className="eyebrow">Organization</span><h2>Choose a workspace</h2><p>Only members can create tasks for their organization.</p></div>
             <OrganizationPicker initialSelectedId={location.state?.organizationId} onSelectionChange={setOrganizationId} />
           </div>
         <form className="form-panel feature-panel" onSubmit={submit}>

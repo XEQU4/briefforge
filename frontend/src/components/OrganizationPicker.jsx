@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { createOrganization, listMyOrganizations } from '../api/organizations'
-import { EmptyState, LoadingState } from './StatePanel'
+import { LoadingState } from './StatePanel'
 
 function slugFor(name) {
-  return name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const normalized = name.trim().normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ')
+  const withoutMarks = normalized.normalize('NFKD').replace(/\p{M}+/gu, '')
+  const base = withoutMarks.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const nonAsciiLetters = /[^\x00-\x7f]/u.test(withoutMarks.replace(/[^\p{L}\p{N}]/gu, ''))
+  let suffix = ''
+  if (!base || nonAsciiLetters) {
+    // A stable suffix keeps names in any script usable without transliteration.
+    let hash = 2166136261
+    for (const character of normalized) hash = Math.imul(hash ^ character.codePointAt(0), 16777619)
+    suffix = `-${(hash >>> 0).toString(16).padStart(8, '0')}`
+  }
+  return `${(base || 'organization').slice(0, 120 - suffix.length).replace(/-+$/g, '')}${suffix}`
 }
 
 export default function OrganizationPicker({ initialSelectedId, onSelectionChange }) {
@@ -13,7 +24,8 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState({ name: '', slug: '' })
+  const [name, setName] = useState('')
+  const [createError, setCreateError] = useState('')
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
   const [loaded, setLoaded] = useState(false)
@@ -36,8 +48,8 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
 
   useEffect(() => {
     // Only membership results may select an organization; URL IDs are preferences.
-    onSelectionChange?.(loaded && selectedId ? Number(selectedId) : null)
-  }, [loaded, selectedId, onSelectionChange])
+    onSelectionChange?.(loaded && selectedId ? Number(selectedId) : null, loaded ? organizations.length : null)
+  }, [loaded, selectedId, organizations.length, onSelectionChange])
 
   useEffect(() => {
     if (!loaded || (searchParams.get('org') || '') === selectedId) return
@@ -57,43 +69,46 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
     })
   }
 
-  function updateName(name) {
-    setForm((current) => ({ ...current, name, slug: slugFor(name) }))
-  }
-
   async function submit(event) {
     event.preventDefault()
+    if (creating || !name.trim()) return
     setCreating(true)
-    setError('')
+    setCreateError('')
     try {
-      const created = await createOrganization(form)
+      const created = await createOrganization({ name: name.trim(), slug: slugFor(name) })
       setOrganizations((current) => [...current, created])
       selectOrganization(created.id)
       setShowCreate(false)
-      setForm({ name: '', slug: '' })
+      setName('')
     } catch (reason) {
-      setError(reason.status === 409 ? 'That organization slug is already in use. Change the slug and try again.' : reason.message)
+      setCreateError(reason.status === 409
+        ? 'An organization with this identifier already exists. Try a slightly different name.'
+        : 'Unable to create your organization. Check your connection and try again.')
     } finally { setCreating(false) }
   }
 
   if (loading) return <LoadingState compact title="Loading organizations" lines={2} />
-  if (error && organizations.length === 0 && !showCreate) return <div className="feedback feedback-error" role="alert"><span>Unable to load your organizations. Please retry.</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>
+  if (error) return <div className="feedback feedback-error" role="alert"><span>Unable to load your organizations. Please retry.</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>
 
   return (
     <div className="organization-picker">
-      {error && <div className="feedback feedback-error" role="alert"><span>{error}</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>}
-      {organizations.length > 0 && <label>Organization
-        <select value={selectedId} onChange={(event) => selectOrganization(event.target.value)}>
-          {organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
-        </select>
-      </label>}
-      {showCreate ? <form className="form-panel compact-form" onSubmit={submit}>
-        <div className="panel-heading"><span className="eyebrow">Business workspace</span><h2>{organizations.length ? 'Add an organization' : 'Create your organization'}</h2><p>Task drafts need an organization workspace.</p></div>
-        <label>Name<input required maxLength={200} value={form.name} onChange={(event) => updateName(event.target.value)} /></label>
-        <label>Slug<input required maxLength={120} value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} /></label>
-        <button disabled={creating || !form.slug.trim()}>{creating ? 'Creating…' : 'Create organization'}</button>
-      </form> : organizations.length > 0 && <button className="text-button" type="button" onClick={() => { setShowCreate(true); setError('') }}>Create another organization</button>}
-      {!organizations.length && !showCreate && <EmptyState title="No organizations available" description="Create an organization to start a business task." />}
+      {organizations.length > 0 && <div className="organization-selector-row">
+        <label>Organization
+          <select value={selectedId} disabled={creating} onChange={(event) => selectOrganization(event.target.value)}>
+            {organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
+          </select>
+        </label>
+        {!showCreate && <button className="text-button" type="button" onClick={() => { setShowCreate(true); setCreateError('') }}>Create another organization</button>}
+      </div>}
+      {showCreate && <form className="organization-create-form" onSubmit={submit}>
+        <div className="panel-heading"><h2>{organizations.length ? 'Add an organization' : 'Create your organization'}</h2><p>You need an organization workspace before creating business challenges.</p></div>
+        {createError && <div className="feedback feedback-error" role="alert">{createError}</div>}
+        <label>Organization name<input name="organization_name" autoComplete="organization" required maxLength={200} disabled={creating} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <div className="organization-create-actions">
+          <button disabled={creating || !name.trim()}>{creating ? 'Creating…' : 'Create organization'}</button>
+          {organizations.length > 0 && <button className="text-button" type="button" disabled={creating} onClick={() => { setShowCreate(false); setCreateError('') }}>Cancel</button>}
+        </div>
+      </form>}
     </div>
   )
 }
