@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
+import uiError from '../utils/uiError'
 
 function requestedPath(from) {
   if (!from || typeof from.pathname !== 'string') return '/tasks'
@@ -33,7 +34,7 @@ export default function AuthPage({ mode }) {
     } catch (reason) {
       if (!isRegister && reason.status === 401) setError('Email or password is incorrect.')
       else if (isRegister && reason.status === 409) setError('An account with this email already exists. Try logging in instead.')
-      else setError(reason.message || 'Unable to complete this request. Try again.')
+      else setError(uiError(reason))
     } finally {
       setSubmitting(false)
     }
@@ -46,7 +47,7 @@ export default function AuthPage({ mode }) {
         <h1>{isRegister ? 'Create your account.' : 'Log in to BriefForge.'}</h1>
         <p>{isRegister ? 'Use one account to manage your business workspaces or student teams.' : 'Continue to your workspace and current projects.'}</p>
         {error && <div className="feedback feedback-error" role="alert">{error}</div>}
-        <form className="form-panel auth-form" onSubmit={submit}>
+        <form className="form-panel auth-form" onSubmit={submit} aria-busy={submitting}>
           <label>Email<input type="email" name="email" autoComplete="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
           {isRegister && <label>Display name <span className="optional-label">Optional</span><input name="display_name" autoComplete="name" value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} /></label>}
           <label>Password<input type="password" name="password" autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 10 : undefined} required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>

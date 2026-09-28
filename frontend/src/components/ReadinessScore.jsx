@@ -16,9 +16,10 @@ export default function ReadinessScore({ task, rating, compact = false }) {
   const missing = rating?.missing_fields || []
   const suggestions = rating?.suggestions || []
   const safeScore = Math.max(0, Math.min(100, Number(score) || 0))
+  const Container = compact ? 'div' : 'section'
 
   return (
-    <section className={`readiness-score${compact ? ' is-compact' : ''}`} aria-label="Readiness score">
+    <Container className={`readiness-score${compact ? ' is-compact' : ''}`} role={compact ? 'group' : undefined} aria-label="Readiness score">
       <div className="readiness-head"><div><span className="readiness-kicker">Readiness</span><strong>{safeScore}<small>/100</small></strong></div>{level && <span className={`status-badge readiness-${level}`}>{levelLabels[level] || level}</span>}</div>
       <div className="readiness-meter" aria-hidden="true"><span style={{ width: `${safeScore}%` }} /></div>
 
@@ -28,6 +29,6 @@ export default function ReadinessScore({ task, rating, compact = false }) {
 
       {!compact && missing.length > 0 && <p className="missing-copy"><strong>Missing:</strong> {missing.join(', ')}</p>}
       {!compact && suggestions.length > 0 && <div className="suggestions"><span className="eyebrow">How to improve</span><ul>{suggestions.map((suggestion, index) => <li key={`${index}-${suggestion}`}>{suggestion}</li>)}</ul></div>}
-    </section>
+    </Container>
   )
 }

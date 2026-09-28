@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { answerTask, confirmTask, getTaskRating, updateTask } from '../api/tasks'
 import ReadinessScore from '../components/ReadinessScore'
+import uiError from '../utils/uiError'
 
 const fields = ['title', 'context', 'need', 'users', 'data_materials', 'constraints', 'expected_result', 'success_criteria', 'contact', 'interaction_format', 'topic']
 const fieldLabels = { title: 'Title', context: 'Context', need: 'Business need', users: 'Users', data_materials: 'Data and materials', constraints: 'Constraints', expected_result: 'Expected result', success_criteria: 'Success criteria', contact: 'Contact', interaction_format: 'Interaction format', topic: 'Topic' }
 const longFields = new Set(['context', 'need', 'users', 'data_materials', 'constraints', 'expected_result', 'success_criteria', 'interaction_format'])
+const statusLabels = { draft: 'Draft', clarifying: 'Clarifying', card_ready: 'Ready to review', confirmed: 'Confirmed' }
 
 export default function TaskCard({ task, questions = [], taskId, onConfirmed }) {
   const id = taskId || task?.id
@@ -40,8 +42,8 @@ export default function TaskCard({ task, questions = [], taskId, onConfirmed }) 
     try {
       const generatedCard = await answerTask(id, questions.map((question) => answers[question.id] || ''))
       setCard(generatedCard)
-      try { setRating(await getTaskRating(id)) } catch (reason) { setError(`Task card created, but rating could not be loaded: ${reason.message}`) }
-    } catch (reason) { setError(reason.message) } finally { setAction(null) }
+      try { setRating(await getTaskRating(id)) } catch (reason) { setError('Task card created, but readiness could not be loaded. Use Save & recalculate to retry.') }
+    } catch (reason) { setError(uiError(reason, 'Unable to build the task card. Your answers are still here; please try again.')) } finally { setAction(null) }
   }
 
   async function saveAndRecalculate() {
@@ -51,7 +53,7 @@ export default function TaskCard({ task, questions = [], taskId, onConfirmed }) 
       setCard(savedCard)
       setRating(await getTaskRating(id))
       setSuccess('Task saved. Readiness and guidance are up to date.')
-    } catch (reason) { setError(reason.message) } finally { setAction(null) }
+    } catch (reason) { setError(uiError(reason, 'Unable to save and update readiness. Please try again.')) } finally { setAction(null) }
   }
 
   async function publish() {
@@ -61,12 +63,12 @@ export default function TaskCard({ task, questions = [], taskId, onConfirmed }) 
       const confirmedTask = await confirmTask(id)
       setCard(confirmedTask)
       onConfirmed?.(confirmedTask)
-    } catch (reason) { setError(reason.message) } finally { setAction(null) }
+    } catch (reason) { setError(uiError(reason, 'Unable to confirm this task. Please try again.')) } finally { setAction(null) }
   }
 
   return (
     <section className="page task-card-page">
-      <header className="page-header split-header compact-header"><div><span className="eyebrow">Task #{id}</span><h1>Shape a brief students can act on.</h1><p>Clarify the need, review the generated card, then improve the score before publishing.</p></div><div className="status-orb glass-panel"><span>Current status</span><strong>{status || 'draft'}</strong></div></header>
+      <header className="page-header split-header compact-header"><div><span className="eyebrow">Task #{id}</span><h1>Shape a brief students can act on.</h1><p>Clarify the need, review the generated card, then improve the score before publishing.</p></div><div className="status-orb glass-panel"><span>Current status</span><strong>{statusLabels[status] || status || 'Draft'}</strong></div></header>
 
       <div className="stepper" aria-label="Task preparation progress">{['Clarify', 'Review & improve', 'Publish'].map((label, index) => <div className={currentStep > index + 1 ? 'is-complete' : currentStep === index + 1 ? 'is-active' : ''} key={label}><span>{index + 1}</span><strong>{label}</strong></div>)}</div>
 
@@ -74,7 +76,7 @@ export default function TaskCard({ task, questions = [], taskId, onConfirmed }) 
       {success && <div className="feedback feedback-success" role="status"><strong>Changes saved</strong><span>{success}</span></div>}
 
       {isClarifying && questions.length > 0 && (
-        <form className="form-panel feature-panel" onSubmit={submitAnswers}>
+        <form className="form-panel feature-panel" onSubmit={submitAnswers} aria-busy={action === 'answers'}>
           <div className="panel-heading"><span className="eyebrow">Step 01 · Clarify</span><h2>Fill the gaps in the original brief</h2><p>Your answers stay in place if the request fails, so you can retry safely.</p></div>
           <div className="question-fields">{questions.map((question, index) => <label key={question.id}><span className="question-label"><small>{String(index + 1).padStart(2, '0')}</small>{question.question_text}</span><textarea aria-label={question.question_text} value={answers[question.id] || ''} onChange={(event) => { touchedAnswers.current.add(question.id); setAnswers((current) => ({ ...current, [question.id]: event.target.value })) }} placeholder="Add the detail the team will need..." /></label>)}</div>
           <div className="form-footer"><span className="form-hint">Answers are used to generate the editable card.</span><button disabled={action !== null}>{action === 'answers' ? 'Building card…' : 'Save answers & build card'}</button></div>
@@ -92,7 +94,7 @@ export default function TaskCard({ task, questions = [], taskId, onConfirmed }) 
             <div className="task-actions"><button className="secondary" disabled={action !== null} onClick={saveAndRecalculate}>{action === 'recalculate' ? 'Recalculating…' : 'Save & recalculate'}</button><button disabled={action !== null || status === 'confirmed'} onClick={publish}>{action === 'publish' ? 'Publishing…' : status === 'confirmed' ? 'Published' : 'Publish task'}</button></div>
           </div>
 
-          <aside className="editor-sidebar"><ReadinessScore task={card} rating={rating} /><div className="glass-panel helper-panel"><span className="eyebrow">Scoring tip</span><h3>Specific beats verbose.</h3><p>Concrete users, available data, measurable success criteria and a clear interaction format raise readiness most effectively.</p></div></aside>
+          <aside className="editor-sidebar"><ReadinessScore task={card} rating={rating} /><div className="glass-panel helper-panel"><span className="eyebrow">Scoring tip</span><h2>Specific beats verbose.</h2><p>Concrete users, available data, measurable success criteria and a clear interaction format raise readiness most effectively.</p></div></aside>
         </div>
       )}
     </section>

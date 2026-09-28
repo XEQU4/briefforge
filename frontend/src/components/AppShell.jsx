@@ -27,8 +27,7 @@ export default function AppShell() {
   return (
     <div className="app-root">
       <a className="skip-link" href="#main-content">Skip to content</a>
-      <div className="aurora aurora-one" aria-hidden="true" />
-      <div className="aurora aurora-two" aria-hidden="true" />
+      <div className="ambient-background" aria-hidden="true"><div className="aurora aurora-one" /><div className="aurora aurora-two" /></div>
       <div className="app-shell">
         <header className={`topbar${authenticated ? '' : ' is-guest'}`}>
           <Link className="brand" to="/tasks" aria-label="BriefForge home">
@@ -54,7 +53,7 @@ export default function AppShell() {
           </div>
         </header>
 
-        {error && <div className="feedback feedback-error shell-notice" role="alert"><strong>Session check failed</strong><span>{error.message}</span><div className="button-row"><button className="secondary" onClick={() => refreshUser().catch(() => {})}>Retry</button><button className="text-button" onClick={clearError}>Dismiss</button></div></div>}
+        {error && <div className="feedback feedback-error shell-notice" role="alert"><strong>Session check failed</strong><span>Unable to check your session. Please try again.</span><div className="button-row"><button className="secondary" onClick={() => refreshUser().catch(() => {})}>Retry</button><button className="text-button" onClick={clearError}>Dismiss</button></div></div>}
         {logoutMessage && <div className="feedback feedback-error shell-notice" role="alert">{logoutMessage}<button className="text-button" onClick={() => setLogoutMessage('')}>Dismiss</button></div>}
         <main className="page-stage" id="main-content" tabIndex={-1}>
           {loggingOut ? <LoadingState title="Signing out" /> : <Outlet />}

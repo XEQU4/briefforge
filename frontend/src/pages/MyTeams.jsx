@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { listMyTeams } from '../api/teams'
 import { EmptyState, LoadingState } from '../components/StatePanel'
+import uiError from '../utils/uiError'
 
 const PAGE_SIZE = 12
 
@@ -27,7 +28,7 @@ export default function MyTeams() {
         setSearchParams(next, { replace: true })
       }
       setResult(value)
-    }).catch((reason) => { if (active) setError(reason.message) })
+    }).catch((reason) => { if (active) setError(uiError(reason, 'Please try loading your teams again.')) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [page, reload, searchParams, setSearchParams])

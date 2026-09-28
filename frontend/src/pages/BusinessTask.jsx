@@ -4,6 +4,7 @@ import { archiveTask, getTask, getTaskQuestions, publishTask, unpublishTask } fr
 import ReadinessScore from '../components/ReadinessScore'
 import { EmptyState, LoadingState } from '../components/StatePanel'
 import TaskCard from './TaskCard'
+import uiError from '../utils/uiError'
 
 const fields = [
   ['context', 'Context'], ['need', 'Business need'], ['users', 'Users'],
@@ -49,7 +50,7 @@ export default function BusinessTask() {
       const actions = { publish: publishTask, unpublish: unpublishTask, archive: archiveTask }
       setTask(await actions[nextAction](taskId))
     } catch (reason) {
-      setActionError(reason.message)
+      setActionError(uiError(reason, 'Unable to change publication. Please try again.'))
     } finally { setAction('') }
   }
 
@@ -61,10 +62,10 @@ export default function BusinessTask() {
 
   if (task.status !== 'confirmed' && task.publication_status === 'archived') {
     return (
-      <section className="page publication-panel feature-panel">
+      <section className="page publication-panel feature-panel archived-task-panel">
         <div>
           <span className="eyebrow">Archived task</span>
-          <h2>Restore the workflow</h2>
+          <h1>Restore the workflow</h1>
           <p>Restore this task to unpublished before continuing its content workflow.</p>
         </div>
 

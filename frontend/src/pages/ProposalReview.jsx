@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { listProposals, updateProposal } from '../api/proposals'
 import { EmptyState, LoadingState } from '../components/StatePanel'
+import uiError from '../utils/uiError'
 
 const PAGE_SIZE = 10
 const statusLabels = { pending: 'Pending', accepted: 'Accepted', rejected: 'Rejected' }
@@ -31,13 +32,13 @@ export default function ProposalReview() {
     try {
       const value = await updateProposal(proposal.id, status)
       setResult((current) => ({ ...current, items: current.items.map((item) => item.id === value.id ? value : item) }))
-    } catch (reason) { setActionError(reason.message) } finally { setPending(null) }
+    } catch (reason) { setActionError(uiError(reason, 'Unable to save this decision. Please try again.')) } finally { setPending(null) }
   }
 
   if (loading) return <section className="page product-page"><LoadingState title="Loading proposals" /></section>
   if (error?.status === 403) return <section className="page product-page"><div className="feedback feedback-error" role="alert"><strong>You do not have access to these proposals.</strong><span>Only members of the task organization can review proposals.</span></div></section>
   if (error?.status === 404) return <section className="page product-page"><EmptyState title="Task not found" description="This task may have been removed." action={<Link to="/business">Back to workspace</Link>} /></section>
-  if (error) return <section className="page product-page"><div className="feedback feedback-error" role="alert">Unable to load proposals: {error.message}</div></section>
+  if (error) return <section className="page product-page"><div className="feedback feedback-error" role="alert">Unable to load proposals. Please reload this page and try again.</div></section>
 
   return (
     <section className="page product-page proposal-review-page">

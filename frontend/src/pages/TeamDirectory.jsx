@@ -4,6 +4,7 @@ import { createTeam, listMyTeams, listTeams } from '../api/teams'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, LoadingState } from '../components/StatePanel'
 import useListQuery from '../hooks/useListQuery'
+import uiError from '../utils/uiError'
 
 const PAGE_SIZE = 12
 const querySchema = { q: { maxLength: 200 } }
@@ -23,6 +24,7 @@ export default function TeamDirectory() {
   const [formOpen, setFormOpen] = useState(location.hash === '#create-team')
   const nameInput = useRef(null)
   const createTrigger = useRef(null)
+  const returnFocus = useRef(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
   const [created, setCreated] = useState(null)
@@ -34,6 +36,13 @@ export default function TeamDirectory() {
   useEffect(() => {
     if (authenticated && formOpen) nameInput.current?.focus()
   }, [authenticated, formOpen])
+
+  useEffect(() => {
+    if (returnFocus.current && !formOpen && !creating) {
+      createTrigger.current?.focus()
+      returnFocus.current = false
+    }
+  }, [formOpen, creating])
 
   useEffect(() => {
     let active = true
@@ -51,9 +60,9 @@ export default function TeamDirectory() {
   }, [page, q, authenticated, version, fitPage])
 
   function closeForm() {
+    returnFocus.current = true
     setFormOpen(false)
     if (location.hash === '#create-team') navigate({ pathname: location.pathname, search: location.search, hash: '' }, { replace: true })
-    createTrigger.current?.focus()
   }
 
   async function submit(event) {
@@ -69,7 +78,7 @@ export default function TeamDirectory() {
       closeForm()
       setVersion((value) => value + 1)
       update({ page: 1 })
-    } catch (reason) { setCreateError(reason.message) } finally { setCreating(false) }
+    } catch (reason) { setCreateError(uiError(reason, 'Unable to create your team. Your details are still here; please try again.')) } finally { setCreating(false) }
   }
 
   return (
@@ -80,7 +89,7 @@ export default function TeamDirectory() {
       </header>
       {authenticated && created && <div className="feedback feedback-success" role="status"><span>Team “{created.name}” created. You are its owner.</span><Link to={`/teams/${created.id}`}>View team</Link></div>}
       {authenticated && <div id="create-team" hidden={!formOpen} className="team-create-section">
-        {formOpen && <form className="team-create-form" onSubmit={submit}>
+        {formOpen && <form className="team-create-form" onSubmit={submit} aria-busy={creating}>
           <div className="panel-heading"><h2>Create a team</h2><p>You’ll be added as the team owner automatically.</p></div>
           {createError && <div className="feedback feedback-error" role="alert">{createError}</div>}
           <div className="form-grid">
@@ -98,7 +107,7 @@ export default function TeamDirectory() {
         <span className="result-count" role="status">{!loading && !error && result ? `${result.total} ${result.total === 1 ? 'team' : 'teams'}` : loading ? 'Loading teams…' : ''}</span>
       </div>
       {error && <div className="feedback feedback-error" role="alert"><strong>Unable to load teams.</strong><span>Please try again.</span><button className="secondary" onClick={() => setVersion((value) => value + 1)}>Retry</button></div>}
-      {loading && <div className="catalog-grid team-skeletons"><LoadingState title="Loading teams" lines={4} /><LoadingState lines={4} /><LoadingState lines={4} /></div>}
+      {loading && <div className="catalog-grid team-skeletons"><LoadingState announce={false} lines={4} /><LoadingState announce={false} lines={4} /><LoadingState announce={false} lines={4} /></div>}
       {!loading && !error && result?.items.length === 0 && <EmptyState eyebrow="" title={q ? 'No teams match your search' : 'No teams yet'} description={q ? 'Try a different name, interest, or skill.' : 'Public team profiles will appear here.'} action={q && <button className="text-button" onClick={() => update({ q: '' })}>Clear search</button>} />}
       {!loading && !error && Boolean(result?.items.length) && <>
         <ul className="card-list catalog-grid team-grid">{result.items.map((team) => <li className="task-card team-card" key={team.id}>

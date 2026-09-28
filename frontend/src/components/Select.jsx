@@ -92,6 +92,10 @@ export default function Select({ label, value, options, onChange, placeholder = 
     if (open && selectedIndex >= 0) setHighlightedIndex(selectedIndex)
   }, [open, selectedIndex])
 
+  useEffect(() => {
+    if (open) rootRef.current?.querySelector('[data-highlighted="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [open, highlightedIndex])
+
   return (
     <div className="custom-select" ref={rootRef}>
       {label && <span className="custom-select-label" id={labelId}>{label}</span>}
@@ -105,7 +109,7 @@ export default function Select({ label, value, options, onChange, placeholder = 
         aria-labelledby={!ariaLabel ? (label ? `${labelId} ${valueId}` : valueId) : undefined}
         aria-expanded={open}
         aria-haspopup="listbox"
-        aria-controls={listboxId}
+        aria-controls={open ? listboxId : undefined}
         aria-activedescendant={open ? `${listboxId}-option-${highlightedIndex}` : undefined}
         data-open={open}
         onClick={() => open ? closeMenu() : openMenu()}

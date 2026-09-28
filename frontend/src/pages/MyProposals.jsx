@@ -34,7 +34,7 @@ export default function MyProposals() {
         <span className="result-count" role="status">{!loading && !error && result ? `${result.total} ${result.total === 1 ? 'proposal' : 'proposals'}` : loading ? 'Loading proposals…' : ''}</span>
       </div>
       {error && <div className="feedback feedback-error" role="alert"><strong>Unable to load your proposals.</strong><span>Please retry. Only proposals you personally submitted are included.</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>}
-      {loading && <LoadingState title="Loading your proposals" />}
+      {loading && <LoadingState announce={false} />}
       {!loading && !error && result?.items.length === 0 && <EmptyState eyebrow="" title={status ? `No ${status} proposals` : 'No proposals yet'} description={status ? 'Choose another status to see more of your proposal history.' : 'Submit a proposal to a published challenge to start your history.'} action={status ? <button className="text-button" onClick={() => update({ status: '' })}>Show all proposals</button> : <Link to="/tasks">Explore challenges</Link>} />}
       {!loading && !error && Boolean(result?.items.length) && <>
         <ul className="card-list proposal-list">{result.items.map((proposal) => <li className="proposal-row" key={proposal.id}>

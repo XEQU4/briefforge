@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { createOrganization, listMyOrganizations } from '../api/organizations'
 import { LoadingState } from './StatePanel'
@@ -29,8 +29,18 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  const [success, setSuccess] = useState('')
+  const nameRef = useRef(null)
+  const selectRef = useRef(null)
+  const moveFocus = useRef(false)
   const requestedId = searchParams.get('org') ?? String(initialSelectedId ?? '')
   const selectedId = String((organizations.find((item) => String(item.id) === requestedId) || organizations[0])?.id ?? '')
+
+  useEffect(() => {
+    if (!moveFocus.current || loading || creating) return
+    const target = showCreate ? nameRef.current : selectRef.current
+    if (target) { target.focus(); moveFocus.current = false }
+  }, [showCreate, loading, creating])
 
   useEffect(() => {
     let active = true
@@ -74,12 +84,15 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
     if (creating || !name.trim()) return
     setCreating(true)
     setCreateError('')
+    setSuccess('')
     try {
       const created = await createOrganization({ name: name.trim(), slug: slugFor(name) })
       setOrganizations((current) => [...current, created])
       selectOrganization(created.id)
+      moveFocus.current = true
       setShowCreate(false)
       setName('')
+      setSuccess(`Organization “${created.name}” created and selected.`)
     } catch (reason) {
       setCreateError(reason.status === 409
         ? 'An organization with this identifier already exists. Try a slightly different name.'
@@ -94,19 +107,20 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
     <div className="organization-picker">
       {organizations.length > 0 && <div className="organization-selector-row">
         <label>Organization
-          <select value={selectedId} disabled={creating} onChange={(event) => selectOrganization(event.target.value)}>
+          <select ref={selectRef} value={selectedId} disabled={creating} onChange={(event) => selectOrganization(event.target.value)}>
             {organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
           </select>
         </label>
-        {!showCreate && <button className="text-button" type="button" onClick={() => { setShowCreate(true); setCreateError('') }}>Create another organization</button>}
+        {!showCreate && <button className="text-button" type="button" onClick={() => { moveFocus.current = true; setShowCreate(true); setCreateError(''); setSuccess('') }}>Create another organization</button>}
       </div>}
-      {showCreate && <form className="organization-create-form" onSubmit={submit}>
+      {success && <div className="feedback feedback-success" role="status">{success}</div>}
+      {showCreate && <form className="organization-create-form" onSubmit={submit} aria-busy={creating}>
         <div className="panel-heading"><h2>{organizations.length ? 'Add an organization' : 'Create your organization'}</h2><p>You need an organization workspace before creating business challenges.</p></div>
         {createError && <div className="feedback feedback-error" role="alert">{createError}</div>}
-        <label>Organization name<input name="organization_name" autoComplete="organization" required maxLength={200} disabled={creating} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>Organization name<input ref={nameRef} name="organization_name" autoComplete="organization" required maxLength={200} disabled={creating} value={name} onChange={(event) => setName(event.target.value)} /></label>
         <div className="organization-create-actions">
           <button disabled={creating || !name.trim()}>{creating ? 'Creating…' : 'Create organization'}</button>
-          {organizations.length > 0 && <button className="text-button" type="button" disabled={creating} onClick={() => { setShowCreate(false); setCreateError('') }}>Cancel</button>}
+          {organizations.length > 0 && <button className="text-button" type="button" disabled={creating} onClick={() => { moveFocus.current = true; setShowCreate(false); setCreateError('') }}>Cancel</button>}
         </div>
       </form>}
     </div>

@@ -6,6 +6,7 @@ import { getTask, getTaskRating } from '../api/tasks'
 import { listMyTeams } from '../api/teams'
 import ReadinessScore from '../components/ReadinessScore'
 import { EmptyState, LoadingState } from '../components/StatePanel'
+import uiError from '../utils/uiError'
 
 const fields = [
   ['context', 'Context'], ['need', 'Business need'], ['users', 'Users'],
@@ -64,7 +65,7 @@ export default function TaskDetail() {
     if (!authenticated) { setTeams([]); setTeamsLoading(false); return undefined }
     let active = true
     setTeamsLoading(true)
-    listMyTeams().then((value) => { if (active) { setTeams(value.items); setTeamsLoaded(true) } }).catch((reason) => { if (active) setProposalError(reason.message) }).finally(() => { if (active) setTeamsLoading(false) })
+    listMyTeams().then((value) => { if (active) { setTeams(value.items); setTeamsLoaded(true) } }).catch((reason) => { if (active) setProposalError(uiError(reason, 'Unable to load your teams. Please reload the page and try again.')) }).finally(() => { if (active) setTeamsLoading(false) })
     return () => { active = false }
   }, [authenticated])
 
@@ -105,7 +106,7 @@ export default function TaskDetail() {
       setSuccess('Proposal submitted. The organization can now review it.')
     } catch (reason) {
       if (reason.status === 401) setProposalError('Your session expired. Log in again to submit this proposal.')
-      else setProposalError(reason.message)
+      else setProposalError(uiError(reason, 'Unable to submit your proposal. Your details are still here; please try again.'))
     } finally { submittingRef.current = false; setSubmitting(false) }
   }
 
@@ -133,7 +134,7 @@ export default function TaskDetail() {
         {success && <div className="feedback feedback-success" role="status"><span>{success}</span><Link to="/proposals/mine">My proposals</Link></div>}
         {teamsLoading && <LoadingState compact lines={2} title="Loading your teams" />}
         {!teamsLoading && teamsLoaded && !teams.length && <EmptyState eyebrow="" title="Create a team to submit a proposal" description="Proposals are submitted on behalf of a team you belong to." action={<div className="product-actions"><Link className="small-primary-link" to="/teams#create-team">Create a team</Link><Link to="/teams">Browse teams</Link></div>} />}
-        {teams.length > 0 && <form className="proposal-submit-form" onSubmit={submitProposal}>
+        {teams.length > 0 && <form className="proposal-submit-form" onSubmit={submitProposal} aria-busy={submitting}>
           <div className="proposal-team-picker"><label>Your team<select required value={teamId} onChange={(event) => selectTeam(event.target.value)}><option value="">Select your team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label><p className="proposal-helper" role="status">{teamId ? `Submitting for ${teams.find((team) => String(team.id) === teamId)?.name}.` : 'Choose a team you belong to.'}</p></div>
           <label className="proposal-idea">Solution idea<textarea required value={form.idea} onChange={(event) => setForm({ ...form, idea: event.target.value })} placeholder="Describe your approach to this challenge…" /></label>
           <label className="proposal-plan">Plan (optional)<textarea value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })} placeholder="Outline the main delivery steps…" /></label>

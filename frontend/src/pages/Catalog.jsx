@@ -57,11 +57,11 @@ export default function Catalog() {
       </div>
 
       {error && <div className="feedback feedback-error" role="alert"><strong>Unable to load challenges.</strong><span>Please try again.</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>}
-      {loading && <div className="catalog-grid catalog-skeletons" aria-label="Loading challenges"><LoadingState title="Loading challenges" lines={5} /><LoadingState lines={5} /><LoadingState lines={5} /></div>}
+      {loading && <div className="catalog-grid catalog-skeletons" aria-label="Loading challenges"><LoadingState announce={false} lines={5} /><LoadingState announce={false} lines={5} /><LoadingState announce={false} lines={5} /></div>}
       {!loading && !error && tasks?.items.length === 0 && <EmptyState eyebrow="" title={filtered ? 'No challenges match these filters' : 'No published challenges yet'} description={filtered ? 'Try adjusting your search or filters.' : 'Published business challenges will appear here.'} action={filtered && <button className="text-button" onClick={clearFilters}>Clear filters</button>} />}
       {!loading && !error && Boolean(tasks?.items.length) && <>
         <ul className="card-list catalog-grid">{tasks.items.map((task, index) => <li className="task-card" key={task.id} style={{ '--delay': `${Math.min(index, 6) * 45}ms` }}>
-          {task.topic && <span className="status-badge topic-badge">{task.topic}</span>}
+          {task.topic && <span className="status-badge topic-badge" title={task.topic}>{task.topic}</span>}
           <h2>{task.title || `Challenge #${task.id}`}</h2>
           <p className="task-excerpt">{task.need || task.context || 'Explore this business challenge.'}</p>
           <ReadinessScore task={task} compact />
