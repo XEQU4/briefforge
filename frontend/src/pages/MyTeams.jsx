@@ -48,7 +48,7 @@ export default function MyTeams() {
         <span className="eyebrow">Team workspace</span>
         <h1>My teams</h1>
         <p>The teams you belong to, together in one place.</p>
-        <div className="my-teams-actions"><Link to="/proposals/mine">My proposals</Link><Link to="/tasks">Explore tasks</Link></div>
+        <div className="my-teams-actions"><Link to="/proposals/mine">My proposals</Link><Link to="/tasks">Explore challenges</Link></div>
       </header>
       {error && <div className="feedback feedback-error" role="alert"><strong>Unable to load your teams.</strong><span>{error}</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>}
       {loading && <LoadingState title="Loading your teams" />}

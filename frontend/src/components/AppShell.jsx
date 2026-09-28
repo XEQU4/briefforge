@@ -40,7 +40,7 @@ export default function AppShell() {
             <span className="brand-copy"><strong>BriefForge</strong></span>
           </Link>
           <nav className="nav-links" aria-label="Explore">
-            <NavLink className={({ isActive }) => `nav-button${isActive ? ' is-active' : ''}`} to="/tasks">Explore tasks</NavLink>
+            <NavLink className={({ isActive }) => `nav-button${isActive ? ' is-active' : ''}`} to="/tasks">Explore challenges</NavLink>
             <NavLink className={({ isActive }) => `nav-button${isActive ? ' is-active' : ''}`} to="/teams">Teams</NavLink>
           </nav>
           {authenticated && <WorkspaceSwitcher />}

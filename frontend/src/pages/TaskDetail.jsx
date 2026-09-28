@@ -43,6 +43,8 @@ export default function TaskDetail() {
     let active = true
     setLoading(true)
     setError(null)
+    setRating(null)
+    setRatingError('')
     getTask(taskId).then((value) => {
       if (!active) return
       setTask(value)
@@ -107,39 +109,38 @@ export default function TaskDetail() {
     } finally { submittingRef.current = false; setSubmitting(false) }
   }
 
-  if (loading) return <section className="page"><LoadingState title="Loading task" /></section>
-  if (error?.status === 404) return <section className="page"><EmptyState title="Task not found" description="This task may have been removed or is no longer available." action={<Link to="/tasks">Browse tasks</Link>} /></section>
-  if (error?.status === 403) return <section className="page"><div className="feedback feedback-error" role="alert"><strong>You do not have access to this task.</strong><span>Ask an organization member to share it with you.</span></div></section>
-  if (error) return <section className="page"><div className="feedback feedback-error" role="alert">Unable to load task: {error.message}</div></section>
+  if (loading) return <section className="page product-page"><LoadingState title="Loading challenge" /></section>
+  if (error?.status === 404) return <section className="page product-page"><EmptyState eyebrow="" title="Challenge not found" description="This challenge may have been removed or is no longer available." action={<Link to="/tasks">Explore challenges</Link>} /></section>
+  if (error?.status === 403) return <section className="page product-page"><div className="feedback feedback-error" role="alert"><strong>You do not have access to this challenge.</strong><span>Ask an organization member to share it with you.</span></div></section>
+  if (error) return <section className="page product-page"><div className="feedback feedback-error" role="alert">Unable to load this challenge. Please try again.</div><Link to="/tasks">Back to challenges</Link></section>
 
   return (
-    <section className="page detail-page">
-      <Link to="/tasks" className="back-link">← Back to tasks</Link>
-      <header className="detail-hero">
-        <div className="detail-title"><div className="card-topline"><span className="task-id">TASK {String(task.id).padStart(2, '0')}</span>{task.topic && <span className="status-badge topic-badge">{task.topic}</span>}</div><h1>{task.title || `Task #${task.id}`}</h1><p>{task.need || task.context || 'Review the business challenge and available context.'}</p></div>
-        <div className="detail-rating">{rating ? <ReadinessScore task={task} rating={rating} /> : ratingError ? <div className="muted">Rating unavailable: {ratingError}</div> : <LoadingState compact lines={2} title="Loading rating" />}</div>
+    <section className="page product-page public-challenge-page">
+      <Link to="/tasks" className="back-link">← Back to challenges</Link>
+      <header className="product-page-header challenge-header">
+        <div><span className="eyebrow">Published challenge · #{task.id}</span><h1>{task.title || `Challenge #${task.id}`}</h1>{task.topic && <span className="status-badge topic-badge">{task.topic}</span>}<p>{task.need || task.context || 'Review the business challenge and available context.'}</p></div>
+        <div className="challenge-rating">{rating ? <ReadinessScore task={task} rating={rating} /> : ratingError ? <p role="status">Readiness rating is temporarily unavailable.</p> : <LoadingState compact lines={2} title="Loading rating" />}</div>
       </header>
-      <div className="section-heading"><div><span className="eyebrow">Brief overview</span><h2>Task information</h2></div><span className="section-note">Published challenge</span></div>
-      <div className="detail-grid">{fields.map(([key, label]) => <article className={task[key] ? '' : 'is-empty'} key={key}><h3>{label}</h3><p>{task[key] || 'Not provided.'}</p></article>)}</div>
+      <section aria-labelledby="challenge-information">
+        <h2 className="product-section-title" id="challenge-information">Challenge information</h2>
+        <dl className="challenge-fields">{fields.map(([key, label]) => <div className={task[key] ? '' : 'is-empty'} key={key}><dt>{label}</dt><dd>{task[key] || 'Not provided'}</dd></div>)}</dl>
+      </section>
 
-      {!authenticated && !authLoading && <div className="feature-panel proposal-invite"><span className="eyebrow">Interested in this challenge?</span><h2>Sign in to submit a proposal.</h2><p>Proposal submission is available to authenticated members of a team.</p><Link className="small-primary-link" to="/login" state={{ from: location }}>Log in to continue</Link></div>}
-      {authenticated && <div className="workspace-grid student-workspace">
-        <form className="form-panel feature-panel" onSubmit={submitProposal}>
-          <div className="panel-heading"><span className="eyebrow">Team workspace</span><h2>Submit a proposal</h2><p>Choose one of your teams and outline a concrete approach. The organization makes the final decision.</p></div>
-          {proposalError && <div className="feedback feedback-error" role="alert">{proposalError}</div>}
-          {success && <div className="feedback feedback-success" role="status"><span>{success}</span><Link to="/proposals/mine">View My proposals</Link></div>}
-          {teamsLoading && <LoadingState compact lines={2} title="Loading your teams" />}
-          {!teamsLoading && !teams.length && <EmptyState title="No team memberships found" description="Create a team profile first. Public team listings do not establish membership." action={<Link to="/teams">Browse or create a team</Link>} />}
-          {teams.length > 0 && <>
-            <label>Team<select required value={teamId} onChange={(event) => selectTeam(event.target.value)}><option value="">Select your team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-            <label>Solution idea<textarea required value={form.idea} onChange={(event) => setForm({ ...form, idea: event.target.value })} placeholder="Describe the core idea and why it fits the brief..." /></label>
-            <label>Plan<textarea value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })} placeholder="Outline the main delivery steps..." /></label>
-            <div className="form-grid"><label>Deadline<input value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} placeholder="e.g. 3 days" /></label><label>Prototype link<input type="url" value={form.link} onChange={(event) => setForm({ ...form, link: event.target.value })} placeholder="https://..." /></label></div>
-            <div className="form-footer"><span className="form-hint">Your team membership is checked by the backend.</span><button disabled={submitting || teamsLoading || !teamId}>{submitting ? 'Submitting…' : 'Submit proposal'}</button></div>
-          </>}
-        </form>
-        <aside className="feature-panel team-creation"><div className="panel-heading"><span className="eyebrow">Team profile</span><h2>Need a team?</h2><p>Create a team profile and you’ll automatically become its owner.</p><Link to="/teams">Browse and manage teams</Link></div></aside>
-      </div>}
+      {!authenticated && !authLoading && <section className="proposal-invite"><h2>Interested in this challenge?</h2><p>Sign in and choose your team to submit a proposal.</p><Link className="small-primary-link" to="/login" state={{ from: location }}>Sign in to submit a proposal</Link></section>}
+      {authenticated && <section className="challenge-proposal" aria-labelledby="proposal-heading">
+        <div className="section-heading"><h2 id="proposal-heading">Submit a proposal</h2><Link to="/my-teams">My teams</Link></div>
+        {proposalError && <div className="feedback feedback-error" role="alert">{proposalError}</div>}
+        {success && <div className="feedback feedback-success" role="status"><span>{success}</span><Link to="/proposals/mine">My proposals</Link></div>}
+        {teamsLoading && <LoadingState compact lines={2} title="Loading your teams" />}
+        {!teamsLoading && teamsLoaded && !teams.length && <EmptyState eyebrow="" title="Create a team to submit a proposal" description="Proposals are submitted on behalf of a team you belong to." action={<div className="product-actions"><Link className="small-primary-link" to="/teams#create-team">Create a team</Link><Link to="/teams">Browse teams</Link></div>} />}
+        {teams.length > 0 && <form className="proposal-submit-form" onSubmit={submitProposal}>
+          <div className="proposal-team-picker"><label>Your team<select required value={teamId} onChange={(event) => selectTeam(event.target.value)}><option value="">Select your team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label><p className="proposal-helper" role="status">{teamId ? `Submitting for ${teams.find((team) => String(team.id) === teamId)?.name}.` : 'Choose a team you belong to.'}</p></div>
+          <label className="proposal-idea">Solution idea<textarea required value={form.idea} onChange={(event) => setForm({ ...form, idea: event.target.value })} placeholder="Describe your approach to this challenge…" /></label>
+          <label className="proposal-plan">Plan (optional)<textarea value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })} placeholder="Outline the main delivery steps…" /></label>
+          <div className="form-grid"><label>Deadline (optional)<input value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} placeholder="e.g. 3 days" /></label><label>Prototype link (optional)<input type="url" value={form.link} onChange={(event) => setForm({ ...form, link: event.target.value })} placeholder="https://…" /></label></div>
+          <div className="form-footer"><span className="proposal-helper">The organization will review your proposal.</span><button disabled={submitting || teamsLoading || !teamId}>{submitting ? 'Submitting…' : 'Submit proposal'}</button></div>
+        </form>}
+      </section>}
     </section>
   )
 }

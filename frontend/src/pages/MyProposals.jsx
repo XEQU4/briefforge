@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { listMyProposals } from '../api/proposals'
 import { EmptyState, LoadingState } from '../components/StatePanel'
+import useListQuery from '../hooks/useListQuery'
 
 const PAGE_SIZE = 10
+const querySchema = { status: { options: ['', 'pending', 'accepted', 'rejected'] } }
+const statusLabels = { pending: 'Pending', accepted: 'Accepted', rejected: 'Rejected' }
 
 export default function MyProposals() {
-  const [status, setStatus] = useState('')
-  const [page, setPage] = useState(1)
+  const { status, page, update, fitPage } = useListQuery(querySchema)
   const [reload, setReload] = useState(0)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -18,27 +20,34 @@ export default function MyProposals() {
     setLoading(true)
     setError(null)
     listMyProposals({ page, page_size: PAGE_SIZE, status })
-      .then((value) => { if (active) setResult(value) })
+      .then((value) => { if (active && fitPage(value.pages)) setResult(value) })
       .catch((reason) => { if (active) setError(reason) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [page, status, reload])
+  }, [page, status, reload, fitPage])
 
   return (
-    <section className="page my-proposals-page">
-      <header className="page-header"><span className="eyebrow">Student workspace</span><h1>My proposals.</h1><p>Track the proposals you submitted and see organization decisions.</p></header>
-      <div className="filters-panel glass-panel"><label>Proposal status<select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }}><option value="">All proposals</option><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select></label>{result && <span className="muted">{result.total} proposals</span>}</div>
+    <section className="page product-page my-proposals-page">
+      <header className="product-page-header"><div><span className="eyebrow">Team workspace</span><h1>My proposals</h1><p>Track proposals you submitted and organization decisions.</p></div></header>
+      <div className="product-toolbar proposal-toolbar" role="group" aria-label="Proposal filters">
+        <label>Status<select value={status} onChange={(event) => update({ status: event.target.value })}><option value="">All</option><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select></label>
+        <span className="result-count" role="status">{!loading && !error && result ? `${result.total} ${result.total === 1 ? 'proposal' : 'proposals'}` : loading ? 'Loading proposals…' : ''}</span>
+      </div>
       {error && <div className="feedback feedback-error" role="alert"><strong>Unable to load your proposals.</strong><span>Please retry. Only proposals you personally submitted are included.</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>}
       {loading && <LoadingState title="Loading your proposals" />}
-      {!loading && !error && result?.items.length === 0 && <EmptyState title={status ? `No ${status} proposals` : 'No proposals yet'} description={status ? 'Choose another status to see more of your proposal history.' : 'Submit a proposal from a published task to start your history.'} action={<Link to="/tasks">Browse tasks</Link>} />}
+      {!loading && !error && result?.items.length === 0 && <EmptyState eyebrow="" title={status ? `No ${status} proposals` : 'No proposals yet'} description={status ? 'Choose another status to see more of your proposal history.' : 'Submit a proposal to a published challenge to start your history.'} action={status ? <button className="text-button" onClick={() => update({ status: '' })}>Show all proposals</button> : <Link to="/tasks">Explore challenges</Link>} />}
       {!loading && !error && Boolean(result?.items.length) && <>
-        <ul className="card-list proposal-grid">{result.items.map((proposal) => <li className="proposal-card" key={proposal.id}>
-          <div className="card-topline"><span className="task-id">PROPOSAL {String(proposal.id).padStart(2, '0')}</span><span className={`status-badge status-${proposal.status}`}>{proposal.status}</span></div>
-          <h2>{proposal.idea}</h2><p>{proposal.plan || 'No plan provided.'}</p>
-          <div className="proposal-meta"><span>Task #{proposal.task_id}</span><span>Team #{proposal.team_id}</span>{proposal.created_at && <span>Submitted {new Date(proposal.created_at).toLocaleDateString()}</span>}</div>
-          {proposal.link && <a href={proposal.link} target="_blank" rel="noreferrer">Open prototype ↗</a>}
+        <ul className="card-list proposal-list">{result.items.map((proposal) => <li className="proposal-row" key={proposal.id}>
+          <div className="proposal-row-heading"><h2>{proposal.idea}</h2><span className={`status-badge status-${proposal.status}`}>{statusLabels[proposal.status] || proposal.status}</span></div>
+          {proposal.plan && <p className="proposal-excerpt">{proposal.plan}</p>}
+          <div className="proposal-row-meta">
+            <Link to={`/tasks/${proposal.task_id}`}>Task #{proposal.task_id}</Link>
+            <Link to={`/teams/${proposal.team_id}`}>Team #{proposal.team_id}</Link>
+            {proposal.created_at && <span>Submitted <time dateTime={proposal.created_at}>{new Date(proposal.created_at).toLocaleDateString()}</time></span>}
+            {proposal.link && <a href={proposal.link} target="_blank" rel="noreferrer">Open prototype ↗</a>}
+          </div>
         </li>)}</ul>
-        <div className="pagination-controls"><span>Page {result.page} of {Math.max(result.pages, 1)} · {result.total} proposals</span><div className="button-row"><button className="secondary" disabled={result.page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Previous</button><button className="secondary" disabled={result.page >= result.pages || loading} onClick={() => setPage((current) => current + 1)}>Next</button></div></div>
+        <div className="pagination-controls"><span>Page {result.page} of {Math.max(result.pages, 1)}</span><div className="button-row"><button className="secondary" disabled={result.page <= 1 || loading} onClick={() => update({ page: page - 1 })}>Previous</button><button className="secondary" disabled={result.page >= result.pages || loading} onClick={() => update({ page: page + 1 })}>Next</button></div></div>
       </>}
     </section>
   )
