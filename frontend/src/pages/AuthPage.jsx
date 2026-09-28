@@ -3,9 +3,9 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 
 function requestedPath(from) {
-  if (!from || typeof from.pathname !== 'string') return '/business'
+  if (!from || typeof from.pathname !== 'string') return '/tasks'
   const path = `${from.pathname}${from.search || ''}${from.hash || ''}`
-  return path.startsWith('/') && !path.startsWith('//') ? path : '/business'
+  return path.startsWith('/') && !path.startsWith('//') ? path : '/tasks'
 }
 
 export default function AuthPage({ mode }) {
@@ -52,7 +52,7 @@ export default function AuthPage({ mode }) {
           <label>Password<input type="password" name="password" autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 10 : undefined} required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
           <button disabled={submitting}>{submitting ? 'Please wait…' : isRegister ? 'Create account' : 'Log in'}</button>
         </form>
-        <p className="auth-alternative">{isRegister ? 'Already have an account?' : 'New to BriefForge?'}{' '}{isRegister ? <Link to="/login">Log in</Link> : <Link to="/register">Create an account</Link>}</p>
+        <p className="auth-alternative">{isRegister ? 'Already have an account?' : 'New to BriefForge?'}{' '}{isRegister ? <Link to="/login" state={location.state}>Log in</Link> : <Link to="/register" state={location.state}>Create an account</Link>}</p>
       </div>
     </section>
   )

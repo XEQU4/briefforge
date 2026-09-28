@@ -52,7 +52,7 @@ export default function TeamDirectory() {
   return (
     <section className="page teams-page">
       <header className="page-header"><span className="eyebrow">Student teams</span><h1>Find a team. Or start one.</h1><p>Public team profiles help businesses learn about your interests and skills. Membership stays private.</p></header>
-      {authenticated && <form className="feature-panel team-create-form" onSubmit={submit}>
+      {authenticated && <form id="create-team" className="feature-panel team-create-form" onSubmit={submit}>
         <div className="panel-heading"><span className="eyebrow">Your team</span><h2>Create a team profile</h2><p>You’ll be added as the team owner automatically.</p></div>
         {createError && <div className="feedback feedback-error" role="alert">{createError}</div>}
         {created && <div className="feedback feedback-success" role="status">{created}</div>}

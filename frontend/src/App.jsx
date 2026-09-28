@@ -12,6 +12,8 @@ import TeamDirectory from './pages/TeamDirectory'
 import TeamDetail from './pages/TeamDetail'
 import ProposalReview from './pages/ProposalReview'
 import MyProposals from './pages/MyProposals'
+import MyTeams from './pages/MyTeams'
+import Profile from './pages/Profile'
 
 function AppRoutes() {
   return (
@@ -25,6 +27,8 @@ function AppRoutes() {
         <Route path="login" element={<AuthPage mode="login" />} />
         <Route path="register" element={<AuthPage mode="register" />} />
         <Route element={<ProtectedRoute />}>
+          <Route path="profile" element={<Profile />} />
+          <Route path="my-teams" element={<MyTeams />} />
           <Route path="business" element={<BusinessWorkspace />} />
           <Route path="business/tasks/new" element={<TaskDraft />} />
           <Route path="business/tasks/:taskId" element={<BusinessTask />} />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { createOrganization, listMyOrganizations } from '../api/organizations'
 import { EmptyState, LoadingState } from './StatePanel'
 
@@ -8,28 +9,53 @@ function slugFor(name) {
 
 export default function OrganizationPicker({ initialSelectedId, onSelectionChange }) {
   const [organizations, setOrganizations] = useState([])
-  const [selectedId, setSelectedId] = useState(initialSelectedId ? String(initialSelectedId) : '')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ name: '', slug: '' })
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
+  const [loaded, setLoaded] = useState(false)
+  const requestedId = searchParams.get('org') ?? String(initialSelectedId ?? '')
+  const selectedId = String((organizations.find((item) => String(item.id) === requestedId) || organizations[0])?.id ?? '')
 
   useEffect(() => {
     let active = true
+    setLoading(true)
+    setLoaded(false)
     setError('')
     listMyOrganizations().then((items) => {
       if (!active) return
       setOrganizations(items)
-      const preferred = items.find((item) => String(item.id) === String(initialSelectedId))
-      setSelectedId(String(preferred?.id ?? items[0]?.id ?? ''))
+      setLoaded(true)
       setShowCreate(items.length === 0)
     }).catch((reason) => { if (active) setError(reason.message) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [initialSelectedId, reload])
+  }, [reload])
 
-  useEffect(() => { onSelectionChange?.(selectedId ? Number(selectedId) : null) }, [selectedId, onSelectionChange])
+  useEffect(() => {
+    // Only membership results may select an organization; URL IDs are preferences.
+    onSelectionChange?.(loaded && selectedId ? Number(selectedId) : null)
+  }, [loaded, selectedId, onSelectionChange])
+
+  useEffect(() => {
+    if (!loaded || (searchParams.get('org') || '') === selectedId) return
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (selectedId) next.set('org', selectedId)
+      else next.delete('org')
+      return next
+    }, { replace: true })
+  }, [loaded, selectedId, searchParams, setSearchParams])
+
+  function selectOrganization(id) {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set('org', String(id))
+      return next
+    })
+  }
 
   function updateName(name) {
     setForm((current) => ({ ...current, name, slug: slugFor(name) }))
@@ -42,7 +68,7 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
     try {
       const created = await createOrganization(form)
       setOrganizations((current) => [...current, created])
-      setSelectedId(String(created.id))
+      selectOrganization(created.id)
       setShowCreate(false)
       setForm({ name: '', slug: '' })
     } catch (reason) {
@@ -57,7 +83,7 @@ export default function OrganizationPicker({ initialSelectedId, onSelectionChang
     <div className="organization-picker">
       {error && <div className="feedback feedback-error" role="alert"><span>{error}</span><button className="secondary" onClick={() => setReload((value) => value + 1)}>Retry</button></div>}
       {organizations.length > 0 && <label>Organization
-        <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
+        <select value={selectedId} onChange={(event) => selectOrganization(event.target.value)}>
           {organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
         </select>
       </label>}

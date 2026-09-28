@@ -48,7 +48,7 @@ export default function BusinessWorkspace() {
   }, [organizationId, query, status, publicationStatus, page, reload])
 
   const hasFilters = Boolean(query.trim() || status || publicationStatus)
-  const createTask = <Link className="small-primary-link" to="/business/tasks/new" state={{ organizationId }}>Create a task</Link>
+  const createTask = <Link className="small-primary-link" to={`/business/tasks/new?org=${organizationId}`}>Create a task</Link>
 
   return (
     <section className="page workspace-page">

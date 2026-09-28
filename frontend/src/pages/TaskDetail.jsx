@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { createProposal } from '../api/proposals'
 import { getTask, getTaskRating } from '../api/tasks'
@@ -13,12 +13,15 @@ const fields = [
   ['expected_result', 'Expected result'], ['success_criteria', 'Success criteria'],
   ['contact', 'Contact'], ['interaction_format', 'Interaction format'],
 ]
-const EMPTY_FORM = { team_id: '', idea: '', plan: '', deadline: '', link: '' }
+const EMPTY_FORM = { idea: '', plan: '', deadline: '', link: '' }
 
 export default function TaskDetail() {
   const { taskId } = useParams()
   const { authenticated, loading: authLoading, refreshUser } = useAuth()
   const location = useLocation()
+  const returnLocation = useRef(location)
+  returnLocation.current = location
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const [task, setTask] = useState(null)
   const [rating, setRating] = useState(null)
@@ -26,12 +29,15 @@ export default function TaskDetail() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [loading, setLoading] = useState(true)
   const [teamsLoading, setTeamsLoading] = useState(false)
+  const [teamsLoaded, setTeamsLoaded] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [ratingError, setRatingError] = useState('')
   const [proposalError, setProposalError] = useState('')
   const [success, setSuccess] = useState('')
   const submittingRef = useRef(false)
+  const requestedTeam = searchParams.get('team') || ''
+  const teamId = teams.some((team) => String(team.id) === requestedTeam) ? requestedTeam : ''
 
   useEffect(() => {
     let active = true
@@ -45,23 +51,42 @@ export default function TaskDetail() {
       if (!active) return
       if (reason.status === 401) {
         try { await refreshUser() } catch {}
-        if (active) navigate('/login', { replace: true, state: { from: location } })
+        if (active) navigate('/login', { replace: true, state: { from: returnLocation.current } })
       } else setError(reason)
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [taskId, navigate, location, refreshUser])
+  }, [taskId, navigate, refreshUser])
 
   useEffect(() => {
+    setTeamsLoaded(false)
     if (!authenticated) { setTeams([]); setTeamsLoading(false); return undefined }
     let active = true
     setTeamsLoading(true)
-    listMyTeams().then((value) => { if (active) setTeams(value.items) }).catch((reason) => { if (active) setProposalError(reason.message) }).finally(() => { if (active) setTeamsLoading(false) })
+    listMyTeams().then((value) => { if (active) { setTeams(value.items); setTeamsLoaded(true) } }).catch((reason) => { if (active) setProposalError(reason.message) }).finally(() => { if (active) setTeamsLoading(false) })
     return () => { active = false }
   }, [authenticated])
 
+  useEffect(() => {
+    if (!authenticated || !teamsLoaded || !requestedTeam || teamId) return
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.delete('team')
+      return next
+    }, { replace: true })
+  }, [authenticated, teamsLoaded, requestedTeam, teamId, setSearchParams])
+
+  function selectTeam(id) {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (id) next.set('team', id)
+      else next.delete('team')
+      return next
+    })
+  }
+
   async function submitProposal(event) {
     event.preventDefault()
-    if (submittingRef.current || !form.team_id) return
+    if (submittingRef.current || !teamId) return
     submittingRef.current = true
     setSubmitting(true)
     setProposalError('')
@@ -69,7 +94,7 @@ export default function TaskDetail() {
     try {
       await createProposal(taskId, {
         ...form,
-        team_id: Number(form.team_id),
+        team_id: Number(teamId),
         plan: form.plan || null,
         deadline: form.deadline || null,
         link: form.link || null,
@@ -106,11 +131,11 @@ export default function TaskDetail() {
           {teamsLoading && <LoadingState compact lines={2} title="Loading your teams" />}
           {!teamsLoading && !teams.length && <EmptyState title="No team memberships found" description="Create a team profile first. Public team listings do not establish membership." action={<Link to="/teams">Browse or create a team</Link>} />}
           {teams.length > 0 && <>
-            <label>Team<select required value={form.team_id} onChange={(event) => setForm({ ...form, team_id: event.target.value })}><option value="">Select your team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+            <label>Team<select required value={teamId} onChange={(event) => selectTeam(event.target.value)}><option value="">Select your team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
             <label>Solution idea<textarea required value={form.idea} onChange={(event) => setForm({ ...form, idea: event.target.value })} placeholder="Describe the core idea and why it fits the brief..." /></label>
             <label>Plan<textarea value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })} placeholder="Outline the main delivery steps..." /></label>
             <div className="form-grid"><label>Deadline<input value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} placeholder="e.g. 3 days" /></label><label>Prototype link<input type="url" value={form.link} onChange={(event) => setForm({ ...form, link: event.target.value })} placeholder="https://..." /></label></div>
-            <div className="form-footer"><span className="form-hint">Your team membership is checked by the backend.</span><button disabled={submitting || teamsLoading || !form.team_id}>{submitting ? 'Submitting…' : 'Submit proposal'}</button></div>
+            <div className="form-footer"><span className="form-hint">Your team membership is checked by the backend.</span><button disabled={submitting || teamsLoading || !teamId}>{submitting ? 'Submitting…' : 'Submit proposal'}</button></div>
           </>}
         </form>
         <aside className="feature-panel team-creation"><div className="panel-heading"><span className="eyebrow">Team profile</span><h2>Need a team?</h2><p>Create a team profile and you’ll automatically become its owner.</p><Link to="/teams">Browse and manage teams</Link></div></aside>
