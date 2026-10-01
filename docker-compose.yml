@@ -49,6 +49,9 @@ services:
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-briefforge_session}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      AVATAR_DIRECTORY: /app/media/avatars
+    volumes:
+      - media-data:/app/media
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -69,3 +72,4 @@ services:
 
 volumes:
   postgres-data:
+  media-data:

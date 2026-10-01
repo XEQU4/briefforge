@@ -23,7 +23,7 @@ Runs a lightweight database query. Returns `{ "status": "ready", "database": "ok
 
 ## Authentication
 
-Authentication uses an opaque server-side session. The browser receives the `briefforge_session` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, configured lifetime); PostgreSQL stores only its SHA-256 hash. The `Secure` attribute is controlled by `SESSION_COOKIE_SECURE` and must be enabled behind HTTPS in production. Responses from `/auth/*` and `/api/v1/auth/*` are not cacheable. Public user responses contain only `id`, `email`, `display_name`, `created_at`, and `updated_at`.
+Authentication uses an opaque server-side session. The browser receives the `briefforge_session` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, configured lifetime); PostgreSQL stores only its SHA-256 hash. The `Secure` attribute is controlled by `SESSION_COOKIE_SECURE` and must be enabled behind HTTPS in production. Responses from `/auth/*` and `/api/v1/auth/*` are not cacheable. Public user responses contain only `id`, `email`, `display_name`, `avatar_url` (string or null), `created_at`, and `updated_at`.
 
 For cookie-authenticated unsafe requests, send `X-CSRF-Token` with the value of the separate `briefforge_csrf` cookie. This CSRF cookie is `SameSite=Lax`, `Path=/`, and intentionally readable by browser code; its value is random, and only its hash is stored with the session. The server requires the header, CSRF cookie, and stored hash to match. `GET`, `HEAD`, and `OPTIONS` are exempt. This is a synchronizer-token check; CORS is not used as CSRF protection.
 
@@ -33,7 +33,7 @@ Request: `{ "email": "person@example.com", "password": "at least 10 characters",
 
 Creates a user and session, sets both cookies, and returns the public user with status `201`. Email is normalized. Passwords must be 10–128 characters and not whitespace-only. Duplicate email returns `409`; request validation errors do not echo submitted password values.
 
-Example response (`201`): `{ "id": 1, "email": "person@example.com", "display_name": "Name", "created_at": "datetime", "updated_at": "datetime" }`.
+Example response (`201`): `{ "id": 1, "email": "person@example.com", "display_name": "Name", "avatar_url": null, "created_at": "datetime", "updated_at": "datetime" }`.
 
 ### `POST /auth/login` (also `POST /api/v1/auth/login`)
 
@@ -58,6 +58,49 @@ Example error (`401`): `{ "detail": "Authentication required" }`.
 Both organization roles (`owner` and `member`) may manage organization tasks. Both team roles (`owner` and `member`) may submit proposals for their team. Creator, team-owner, and proposal-submitter identities are derived from the current session. The backend does not accept frontend role switches.
 
 Cookie-authenticated `POST`, `PATCH`, `PUT`, and `DELETE` requests require the CSRF header above. Public `GET` endpoints are exempt.
+
+## Current-user profile (v1 only)
+
+All profile endpoints require an active session. Mutations require the existing
+CSRF header. No endpoint accepts a target user ID. Responses use public `UserRead`;
+`GET /api/v1/auth/me` reflects the same updated name and avatar URL.
+
+### `PATCH /api/v1/profile`
+
+Request: `{ "display_name": "Mira Brook" }`. Only `display_name` is editable.
+Whitespace is trimmed, the maximum is 200 characters, and null or empty clears
+the optional name. The field is required; unknown fields are rejected (`422`).
+Email remains read-only. Returns updated `UserRead` (`200`).
+
+### `POST /api/v1/profile/avatar`
+
+Send multipart/form-data containing exactly one `file` field. Accepts JPEG, PNG,
+or WebP with matching MIME type and valid decoded content, at most 2 MB
+(2,097,152 bytes), 16 million pixels, and 8192 pixels per side. Invalid content or
+dimensions returns `422`, unsupported/mismatched MIME returns `415`/`422`, and
+oversized uploads return `413`. Original filenames are ignored. Images are
+orientation-corrected, center-cropped to a square no larger than 512 pixels,
+and re-encoded as a single WebP frame without source metadata.
+
+Returns updated `UserRead` (`200`). Replacements use new random filenames and
+commit the new reference before removing the old file. Files live under
+`AVATAR_DIRECTORY` (local default `media/avatars`; Docker `/app/media/avatars`),
+on the backend's persistent `media-data` volume. Back up this volume alongside
+PostgreSQL. Nginx permits at most 3 MB of multipart data on this endpoint; its
+default 1 MB body limit still applies elsewhere.
+
+### `DELETE /api/v1/profile/avatar`
+
+Clears the current user's reference, then safely removes their previous file.
+Returns updated `UserRead` with `avatar_url: null` (`200`); repeated delete is safe.
+
+### `GET /api/v1/users/me/avatar`
+
+Serves only the signed-in user's current normalized image (`image/webp`), or
+`404` if absent. Uses `Cache-Control: private, no-store` and
+`X-Content-Type-Options: nosniff`. The opaque query revision in `avatar_url`
+changes after replacement to refresh images; it is not an authorization token
+or filename selector. No media directory or filesystem path is exposed.
 
 ## Organizations
 

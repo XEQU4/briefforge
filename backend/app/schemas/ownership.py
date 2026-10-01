@@ -1,6 +1,7 @@
 from datetime import datetime
+from hashlib import sha256
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.organization_member import OrganizationMemberRole
 from app.models.team_member import TeamMemberRole
@@ -12,8 +13,22 @@ class UserRead(BaseModel):
     id: int
     email: str
     display_name: str | None = None
+    avatar_url: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def include_avatar_url(cls, value):
+        if not isinstance(value, dict):
+            filename = getattr(value, "avatar_filename", None)
+            data = {key: getattr(value, key) for key in ("id", "email", "display_name", "created_at", "updated_at")}
+            # An opaque revision changes the image src after replacement without
+            # exposing the stored filename. The route always checks the session.
+            revision = sha256(filename.encode()).hexdigest()[:16] if filename else None
+            data["avatar_url"] = f"/api/v1/users/me/avatar?v={revision}" if revision else None
+            return data
+        return value
 
 
 class OrganizationRead(BaseModel):

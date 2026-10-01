@@ -31,8 +31,8 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
     @application.middleware("http")
     async def demo_security_headers(request, call_next):
         result = await call_next(request)
-        if request.url.path.startswith(("/auth/", "/api/v1/auth/")):
-            result.headers["Cache-Control"] = "no-store"
+        if request.url.path.startswith(("/auth/", "/api/v1/auth/", "/api/v1/profile", "/api/v1/users/me/avatar")):
+            result.headers["Cache-Control"] = "private, no-store" if request.url.path == "/api/v1/users/me/avatar" else "no-store"
             result.headers["X-Content-Type-Options"] = "nosniff"
         if request.url.path == "/admin/demo" or request.url.path.startswith("/admin/demo/"):
             result.headers["Cache-Control"] = "no-store"
@@ -62,7 +62,7 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
 
     @application.exception_handler(RequestValidationError)
     async def safe_validation_errors(request: Request, exc: RequestValidationError):
-        if request.url.path.startswith(("/auth/", "/api/v1/auth/")):
+        if request.url.path.startswith(("/auth/", "/api/v1/auth/", "/api/v1/profile")):
             errors = [
                 {key: value for key, value in error.items() if key not in {"input", "ctx", "url"}}
                 for error in exc.errors()

@@ -27,6 +27,7 @@ htmlcov/
 *.sqlite3
 *.sqlite-*
 data/
+media/
 
 # Node / Vite
 node_modules/

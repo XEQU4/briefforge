@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./app.db")
@@ -12,6 +13,7 @@ SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "604800"))
 if SESSION_TTL_SECONDS < 1:
     raise ValueError("SESSION_TTL_SECONDS must be positive")
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").strip().lower() == "true"
+AVATAR_DIRECTORY = Path(os.getenv("AVATAR_DIRECTORY", "media/avatars"))
 
 
 def valid_demo_admin_token(token: str) -> bool:

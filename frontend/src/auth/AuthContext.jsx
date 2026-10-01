@@ -71,6 +71,10 @@ export function AuthProvider({ children }) {
   }, [])
 
   const clearError = useCallback(() => setError(null), [])
+  // A late profile response must not restore a logged-out or different account.
+  const updateUser = useCallback((value) => {
+    setUser((current) => current?.id === value.id ? value : current)
+  }, [])
   const value = useMemo(() => ({
     user,
     loading: status === 'loading',
@@ -78,10 +82,11 @@ export function AuthProvider({ children }) {
     error,
     clearError,
     refreshUser,
+    updateUser,
     register,
     login,
     logout,
-  }), [user, status, error, clearError, refreshUser, register, login, logout])
+  }), [user, status, error, clearError, refreshUser, updateUser, register, login, logout])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

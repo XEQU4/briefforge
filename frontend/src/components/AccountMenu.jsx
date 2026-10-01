@@ -1,16 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
-
-function initialsFor(user) {
-  const name = user.display_name?.trim()
-  const parts = name ? name.split(/\s+/) : user.email.split('@')[0].split(/[._-]+/).filter(Boolean)
-  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-  const characters = (value) => Array.from(segmenter.segment(value), ({ segment }) => segment)
-  const initials = parts.length > 1
-    ? parts.slice(0, 2).map((part) => characters(part)[0]).join('')
-    : characters(parts[0] || '').slice(0, 2).join('')
-  return initials.toLocaleUpperCase() || 'BF'
-}
+import UserAvatar from './UserAvatar'
 
 export default function AccountMenu({ user, loggingOut, onLogout }) {
   const [open, setOpen] = useState(false)
@@ -74,7 +64,7 @@ export default function AccountMenu({ user, loggingOut, onLogout }) {
           }
         }}
       >
-        <span className="account-initials" aria-hidden="true">{initialsFor(user)}</span>
+        <UserAvatar user={user} />
         <span className="account-chevron" aria-hidden="true">▾</span>
       </button>
       {open && <div className="account-dropdown">

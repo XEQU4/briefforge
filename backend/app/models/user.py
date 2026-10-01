@@ -12,6 +12,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    avatar_filename: Mapped[str | None] = mapped_column(String(37), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

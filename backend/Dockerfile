@@ -9,8 +9,8 @@ COPY requirements.txt ./requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements.txt \
     && useradd --system --uid 10001 --create-home appuser \
-    && mkdir -p /data \
-    && chown appuser:appuser /data
+    && mkdir -p /data /app/media/avatars \
+    && chown -R appuser:appuser /data /app/media
 
 COPY app ./app
 COPY tests ./tests

@@ -4,11 +4,13 @@ import json
 import os
 import tempfile
 import unittest
+from io import BytesIO
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+from PIL import Image
 
 _test_directory = tempfile.TemporaryDirectory(prefix="warspaceman-backend-tests-")
 atexit.register(_test_directory.cleanup)
@@ -49,6 +51,12 @@ CARD = {
 
 class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        media = tempfile.TemporaryDirectory(prefix="briefforge-avatar-tests-")
+        self.addCleanup(media.cleanup)
+        self.avatar_directory = Path(media.name) / "avatars"
+        avatar_config = patch.object(config, "AVATAR_DIRECTORY", self.avatar_directory)
+        avatar_config.start()
+        self.addCleanup(avatar_config.stop)
         async with engine.begin() as connection:
             if connection.dialect.name == "sqlite":
                 await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
@@ -134,6 +142,209 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         csrf_token = client.cookies.get(config.CSRF_COOKIE_NAME)
         client.headers["X-CSRF-Token"] = csrf_token
         return client, response.json()
+
+
+    @staticmethod
+    def avatar_image(fmt="PNG", size=(640, 480)):
+        output = BytesIO()
+        image = Image.new("RGB", size, "#6543ba")
+        exif = Image.Exif()
+        exif[274] = 6
+        exif[270] = "private metadata"
+        image.save(output, format=fmt, exif=exif)
+        return output.getvalue()
+
+    async def post_avatar(self, data=None, mime="image/png", filename="avatar.png", client=None):
+        return await (client or self.client).post(
+            "/api/v1/profile/avatar",
+            files={"file": (filename, self.avatar_image() if data is None else data, mime)},
+        )
+
+    async def test_profile_and_avatar_require_auth_and_csrf(self):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as anonymous:
+            self.assertEqual((await anonymous.patch("/api/v1/profile", json={"display_name": "Name"})).status_code, 401)
+            self.assertEqual((await self.post_avatar(client=anonymous)).status_code, 401)
+            self.assertEqual((await anonymous.delete("/api/v1/profile/avatar")).status_code, 401)
+            self.assertEqual((await anonymous.get("/api/v1/users/me/avatar")).status_code, 401)
+        self.client.headers.pop("X-CSRF-Token")
+        self.assertEqual((await self.client.patch("/api/v1/profile", json={"display_name": "Name"})).status_code, 403)
+        self.assertEqual((await self.post_avatar()).status_code, 403)
+        self.assertEqual((await self.client.delete("/api/v1/profile/avatar")).status_code, 403)
+
+    async def test_profile_display_name_policy_and_me(self):
+        response = await self.client.patch("/api/v1/profile", json={"display_name": "  Mira Brook  "})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["display_name"], "Mira Brook")
+        self.assertIsNone(response.json()["avatar_url"])
+        for path in ("/auth/me", "/api/v1/auth/me"):
+            me = (await self.client.get(path)).json()
+            self.assertEqual(me["display_name"], "Mira Brook")
+            self.assertEqual(me["email"], self.business_user.email)
+        self.assertEqual((await self.client.patch("/api/v1/profile", json={"display_name": "x" * 201})).status_code, 422)
+        self.assertEqual((await self.client.patch("/api/v1/profile", json={})).status_code, 422)
+        for value in ("   ", "", None):
+            response = await self.client.patch("/api/v1/profile", json={"display_name": value})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertIsNone(response.json()["display_name"])
+
+    async def test_profile_rejects_forbidden_fields_and_arbitrary_user(self):
+        for field, value in {
+            "email": "someone@example.com", "id": 999, "user_id": 999,
+            "is_active": False, "password_hash": "secret", "created_at": "2020-01-01",
+            "updated_at": "2020-01-01", "avatar_filename": "../other.webp", "admin": True,
+        }.items():
+            with self.subTest(field=field):
+                response = await self.client.patch("/api/v1/profile", json={"display_name": "Changed", field: value})
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertNotIn("input", response.json()["detail"][0])
+        other, other_user = await self.new_registered_client("profile-other@example.com")
+        try:
+            self.assertEqual((await other.patch("/api/v1/profile", json={"display_name": "Other"})).status_code, 200)
+            self.assertEqual((await self.client.patch("/api/v1/profile", json={"display_name": "Mine"})).status_code, 200)
+            self.assertEqual((await other.get("/api/v1/auth/me")).json()["display_name"], "Other")
+            self.assertEqual((await self.client.patch(f"/api/v1/profile/{other_user['id']}", json={"display_name": "Changed"})).status_code, 404)
+            response = await self.client.post("/api/v1/profile/avatar", data={"user_id": other_user["id"]}, files={"file": ("a.png", self.avatar_image(), "image/png")})
+            self.assertEqual(response.status_code, 422)
+        finally:
+            await other.aclose()
+
+    async def test_avatar_formats_are_normalized_and_metadata_stripped(self):
+        for fmt, mime, filename in (
+            ("JPEG", "image/jpeg", "../../secret.jpg"),
+            ("PNG", "image/png", "C:\\private\\profile.png"),
+            ("WEBP", "image/webp", "/etc/passwd"),
+        ):
+            with self.subTest(fmt=fmt):
+                response = await self.post_avatar(self.avatar_image(fmt), mime, filename)
+                self.assertEqual(response.status_code, 200, response.text)
+                public = response.json()
+                self.assertNotIn("avatar_filename", public)
+                self.assertRegex(public["avatar_url"], r"^/api/v1/users/me/avatar\?v=[0-9a-f]{16}$")
+                stored = list(self.avatar_directory.iterdir())
+                self.assertEqual(len(stored), 1)
+                self.assertRegex(stored[0].name, r"^[0-9a-f]{32}\.webp$")
+                self.assertNotIn(stored[0].name, response.text)
+                image_response = await self.client.get(public["avatar_url"])
+                self.assertEqual(image_response.status_code, 200)
+                self.assertEqual(image_response.headers["content-type"], "image/webp")
+                self.assertEqual(image_response.headers["cache-control"], "private, no-store")
+                self.assertEqual(image_response.headers["x-content-type-options"], "nosniff")
+                with Image.open(BytesIO(image_response.content)) as image:
+                    self.assertEqual(image.format, "WEBP")
+                    self.assertEqual(image.size, (480, 480))
+                    self.assertFalse(image.getexif())
+                    self.assertNotIn("icc_profile", image.info)
+                self.assertEqual((await self.client.get("/api/v1/auth/me")).json()["avatar_url"], public["avatar_url"])
+
+    async def test_avatar_rejects_invalid_images_without_changing_current_avatar(self):
+        original = (await self.post_avatar()).json()["avatar_url"]
+        for data, mime, expected in (
+            (b"<svg onload='alert(1)'></svg>", "image/png", 422),
+            (self.avatar_image(), "image/gif", 415),
+            (self.avatar_image(), "image/jpeg", 422),
+            (self.avatar_image()[:60], "image/png", 422),
+            (self.avatar_image(size=(8193, 1)), "image/png", 422),
+            (self.avatar_image(size=(4001, 4000)), "image/png", 422),
+        ):
+            with self.subTest(mime=mime, size=len(data)):
+                response = await self.post_avatar(data, mime, "looks-valid.png")
+                self.assertEqual(response.status_code, expected, response.text)
+                self.assertNotIn("Traceback", response.text)
+                self.assertEqual((await self.client.get("/api/v1/auth/me")).json()["avatar_url"], original)
+                self.assertEqual(len(list(self.avatar_directory.iterdir())), 1)
+
+
+    async def test_avatar_multipart_body_is_bounded_and_rejects_extra_parts(self):
+        async def oversized_stream():
+            yield b'--avatar\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n'
+            for _ in range(36):
+                yield b"x" * 65536
+            yield b"\r\n--avatar--\r\n"
+        response = await self.client.post("/api/v1/profile/avatar", content=oversized_stream(), headers={"Content-Type": "multipart/form-data; boundary=avatar"})
+        self.assertEqual(response.status_code, 413, response.text)
+        response = await self.client.post("/api/v1/profile/avatar", files=[
+            ("file", ("a.png", self.avatar_image(), "image/png")),
+            ("file", ("b.png", self.avatar_image(), "image/png")),
+        ])
+        self.assertEqual(response.status_code, 422, response.text)
+        response = await self.client.post("/api/v1/profile/avatar", json={"file": "not multipart"})
+        self.assertEqual(response.status_code, 422, response.text)
+        response = await self.client.post("/api/v1/profile/avatar")
+        self.assertEqual(response.status_code, 422, response.text)
+        response = await self.client.post("/api/v1/profile/avatar", content=b"bad framing", headers={"Content-Type": "multipart/form-data; boundary=avatar"})
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertFalse(self.avatar_directory.exists())
+
+    async def test_avatar_size_boundary(self):
+        from app.services.avatars import MAX_UPLOAD_BYTES
+        image = self.avatar_image()
+        boundary = image + b"\0" * (MAX_UPLOAD_BYTES - len(image))
+        response = await self.post_avatar(boundary)
+        self.assertEqual(response.status_code, 200, response.text)
+        original = response.json()["avatar_url"]
+        response = await self.post_avatar(boundary + b"x")
+        self.assertEqual(response.status_code, 413, response.text)
+        self.assertEqual((await self.client.get("/api/v1/auth/me")).json()["avatar_url"], original)
+
+    async def test_avatar_replace_delete_and_user_isolation(self):
+        first = (await self.post_avatar()).json()["avatar_url"]
+        old_file = next(self.avatar_directory.iterdir())
+        other, _ = await self.new_registered_client("avatar-other@example.com")
+        try:
+            self.assertEqual((await other.get(first)).status_code, 404)
+            second_user = await self.post_avatar(client=other)
+            self.assertEqual(second_user.status_code, 200, second_user.text)
+            other_image = (await other.get(second_user.json()["avatar_url"])).content
+            replaced = await self.post_avatar(self.avatar_image("JPEG"), "image/jpeg")
+            self.assertEqual(replaced.status_code, 200, replaced.text)
+            self.assertNotEqual(first, replaced.json()["avatar_url"])
+            self.assertFalse(old_file.exists())
+            self.assertEqual(len(list(self.avatar_directory.iterdir())), 2)
+            for _ in range(2):
+                response = await self.client.delete("/api/v1/profile/avatar")
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNone(response.json()["avatar_url"])
+                self.assertEqual((await self.client.get(first)).status_code, 404)
+            self.assertEqual(len(list(self.avatar_directory.iterdir())), 1)
+            self.assertEqual((await other.get(second_user.json()["avatar_url"])).content, other_image)
+        finally:
+            await other.aclose()
+
+    async def test_avatar_failed_db_commit_keeps_previous_file(self):
+        from sqlalchemy.ext.asyncio import AsyncSession
+        original = (await self.post_avatar()).json()["avatar_url"]
+        files_before = list(self.avatar_directory.iterdir())
+        with patch.object(AsyncSession, "commit", side_effect=SQLAlchemyError("simulated failure")):
+            with self.assertRaises(SQLAlchemyError):
+                await self.post_avatar()
+        self.assertEqual(list(self.avatar_directory.iterdir()), files_before)
+        self.assertEqual((await self.client.get("/api/v1/auth/me")).json()["avatar_url"], original)
+        with patch.object(AsyncSession, "commit", side_effect=SQLAlchemyError("simulated failure")):
+            with self.assertRaises(SQLAlchemyError):
+                await self.client.delete("/api/v1/profile/avatar")
+        self.assertEqual(list(self.avatar_directory.iterdir()), files_before)
+        self.assertEqual((await self.client.get("/api/v1/auth/me")).json()["avatar_url"], original)
+
+    async def test_avatar_storage_failure_keeps_previous_file(self):
+        original = (await self.post_avatar()).json()["avatar_url"]
+        with patch("app.services.avatars.store_avatar", side_effect=OSError("private disk details")):
+            response = await self.post_avatar()
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("private disk details", response.text)
+        self.assertEqual((await self.client.get("/api/v1/auth/me")).json()["avatar_url"], original)
+        self.assertEqual(len(list(self.avatar_directory.iterdir())), 1)
+
+    async def test_avatar_unsafe_stored_reference_cannot_read_or_delete_outside_file(self):
+        outside = self.avatar_directory.parent / "outside.webp"
+        outside.write_bytes(b"private")
+        for filename in ("../outside.webp", str(outside.resolve())):
+            async with SessionLocal() as db:
+                user = await db.get(User, self.business_user.id)
+                user.avatar_filename = filename
+                await db.commit()
+            self.assertEqual((await self.client.get("/api/v1/users/me/avatar")).status_code, 404)
+            self.assertEqual((await self.client.delete("/api/v1/profile/avatar")).status_code, 200)
+            self.assertEqual(outside.read_bytes(), b"private")
 
     async def test_task_lifecycle_enums_and_status_patch_is_rejected(self):
         created = await self.create_task()
@@ -667,7 +878,7 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         public_user = response.json()
         self.assertEqual(public_user["email"], "person@example.com")
-        self.assertEqual(set(public_user), {"id", "email", "display_name", "created_at", "updated_at"})
+        self.assertEqual(set(public_user), {"id", "email", "display_name", "avatar_url", "created_at", "updated_at"})
         self.assertNotIn(password, response.text)
         self.assertNotIn("password_hash", response.text)
 
