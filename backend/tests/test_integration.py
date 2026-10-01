@@ -2,6 +2,7 @@ import atexit
 import importlib
 import json
 import os
+import secrets
 import tempfile
 import unittest
 from io import BytesIO
@@ -63,7 +64,7 @@ class BackendTestCase(unittest.IsolatedAsyncioTestCase):
             await connection.run_sync(Base.metadata.drop_all)
             await connection.run_sync(Base.metadata.create_all)
         raw_session = "integration-test-session-token"
-        csrf_token = "integration-test-csrf-token"
+        csrf_token = secrets.token_urlsafe(32)
         async with SessionLocal() as session:
             self.business_user = User(email="integration-business@example.com")
             self.business_org = Organization(name="Integration Business", slug="integration-business")

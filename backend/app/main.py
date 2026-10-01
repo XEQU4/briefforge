@@ -11,7 +11,7 @@ from app.api.router import api_router
 from app.api.routes import health
 from app.core import config
 from app.core.db import SessionLocal
-from app.services.auth_security import hash_session_value, load_active_session
+from app.services.auth_security import hash_session_value, load_active_session, valid_csrf_token
 
 
 def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) -> FastAPI:
@@ -53,8 +53,8 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
                         csrf_cookie = request.cookies.get(config.CSRF_COOKIE_NAME, "")
                         csrf_header = request.headers.get("X-CSRF-Token", "")
                         if (
-                            not csrf_cookie
-                            or not csrf_header
+                            not valid_csrf_token(csrf_cookie)
+                            or not valid_csrf_token(csrf_header)
                             or not hmac.compare_digest(csrf_cookie, csrf_header)
                             or not hmac.compare_digest(hash_session_value(csrf_header), session.csrf_token_hash)
                         ):

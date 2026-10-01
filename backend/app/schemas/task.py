@@ -4,10 +4,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.status import TaskPublicationStatus, TaskStatus
+from app.schemas.limits import ResourceId
 
 
 class TaskFields(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, max_length=500)
     context: str | None = None
     need: str | None = None
     users: str | None = None
@@ -15,15 +16,15 @@ class TaskFields(BaseModel):
     constraints: str | None = None
     expected_result: str | None = None
     success_criteria: str | None = None
-    contact: str | None = None
-    interaction_format: str | None = None
-    topic: str | None = None
+    contact: str | None = Field(default=None, max_length=500)
+    interaction_format: str | None = Field(default=None, max_length=500)
+    topic: str | None = Field(default=None, max_length=200)
 
 
 class TaskCreate(BaseModel):
     draft_text: str = Field(min_length=1)
-    topic: str | None = None
-    organization_id: int | None = None
+    topic: str | None = Field(default=None, max_length=200)
+    organization_id: ResourceId | None = None
 
     @model_validator(mode="before")
     @classmethod

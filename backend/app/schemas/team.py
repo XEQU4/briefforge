@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TeamFields(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=200)
     interests: str | None = None
     skills: str | None = None
     technologies: str | None = None
@@ -20,7 +20,7 @@ class TeamCreate(TeamFields):
 
 
 class TeamUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=200)
     interests: str | None = None
     skills: str | None = None
     technologies: str | None = None

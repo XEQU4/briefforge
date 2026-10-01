@@ -10,6 +10,7 @@ from app.domain.status import TaskPublicationStatus, TaskStatus
 from app.models import Organization, OrganizationMember, OrganizationMemberRole, Task, User
 from app.schemas.ownership import OrganizationCreate, OrganizationRead
 from app.schemas.pagination import PaginatedResponse
+from app.schemas.limits import MAX_PAGE, MAX_PAGE_SIZE, ResourceId
 from app.schemas.task import TaskRead
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
@@ -35,9 +36,11 @@ async def create_organization(
 
 @router.get("/mine", response_model=list[OrganizationRead])
 async def list_my_organizations(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[Organization]:
+    response.headers["Cache-Control"] = "private, no-store"
     result = await db.execute(
         select(Organization)
         .join(OrganizationMember, OrganizationMember.organization_id == Organization.id)
@@ -53,13 +56,13 @@ def _escape_like(value: str) -> str:
 
 @router.get("/{organization_id}/tasks", response_model=PaginatedResponse[TaskRead])
 async def list_organization_tasks(
-    organization_id: int,
+    organization_id: ResourceId,
     response: Response,
     q: str | None = Query(None, max_length=200),
     task_status: TaskStatus | None = Query(None, alias="status"),
     publication_status: TaskPublicationStatus | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
     sort: str = Query("newest"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -102,10 +105,12 @@ async def list_organization_tasks(
 
 @router.get("/{organization_id}", response_model=OrganizationRead)
 async def get_organization(
-    organization_id: int,
+    response: Response,
+    organization_id: ResourceId,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Organization:
+    response.headers["Cache-Control"] = "private, no-store"
     organization = await db.get(Organization, organization_id)
     if organization is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")

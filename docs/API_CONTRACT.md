@@ -7,7 +7,11 @@ All JSON responses use the fields shown below. `TaskStatus` is one of `draft`, `
 
 `/api/v1` is the preferred product API namespace. Current unversioned product routes remain temporary compatibility aliases to the same handlers and authorization rules; they may be removed in a later release. Health routes (`/health/live` and `/health/ready`) remain unversioned.
 
-Versioned task, team, and task-proposal list endpoints return `{ "items": [], "page": 1, "page_size": 20, "total": 0, "pages": 0 }`. `page` defaults to `1` and must be at least `1`. `page_size` defaults to `20` and must be between `1` and `100`. Counts are calculated in the database. Empty results have `pages: 0`. The corresponding unversioned list routes keep their existing array response.
+Versioned task, team, and task-proposal list endpoints return `{ "items": [], "page": 1, "page_size": 20, "total": 0, "pages": 0 }`. `page` defaults to `1` and must be between `1` and `21474837`, keeping offsets within PostgreSQL's signed Integer range even at the maximum page size. `page_size` defaults to `20` and must be between `1` and `100`. Counts are calculated in the database. Empty results have `pages: 0`. The corresponding unversioned list routes keep their existing array response.
+
+Resource IDs in paths, filters, and creation payloads must be between `1` and `2147483647`. Out-of-range IDs, pages, and overlength bounded fields return `422`. Task title/contact/interaction format are limited to 500 characters, task topic and team name to 200, proposal deadline to 100, and proposal link to 1000. Text-column fields retain their existing behavior.
+
+Private organization reads, own team/proposal lists, and organization proposal review lists return `Cache-Control: private, no-store` on both supported API prefixes. Public catalog caching behavior is unchanged.
 
 Versioned and unversioned examples below use the current compatibility paths; prepend `/api/v1` to use the preferred API. For example, use `GET /api/v1/tasks` for the paginated catalog and `GET /tasks` for its legacy array response.
 
@@ -356,7 +360,9 @@ Request: `{ "status": "pending|accepted|rejected" }`
 
 Only a member of the task's organization may decide a proposal; submitting it as a team member does not grant decision rights. Response: `Proposal`. This endpoint only changes a manually supplied status and never assigns a team automatically.
 
-Proposal lifecycle transitions are `pending` → `accepted` or `pending` → `rejected`. Repeating `pending` is idempotent; `accepted` and `rejected` are terminal.
+Proposal lifecycle transitions are `pending` → `accepted` or `pending` → `rejected`. Repeating `pending` is idempotent; `accepted` and `rejected` are terminal. Concurrent terminal decisions are serialized: exactly one succeeds and the conflicting request returns `409`.
+
+New proposal links must be absolute `http://` or `https://` URLs, or empty/null. Other schemes, protocol-relative/relative links, and malformed URLs return `422`. Existing stored proposals remain readable; the frontend omits unsafe prototype links.
 
 `Proposal`: `{ "id": 1, "task_id": 1, "team_id": 1, "idea": "string", "plan": "string|null", "deadline": "string|null", "link": "string|null", "status": "pending", "created_at": "datetime|null" }`
 

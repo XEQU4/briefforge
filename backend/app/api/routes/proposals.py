@@ -10,6 +10,7 @@ from app.domain.status import ProposalStatus
 from app.models import Proposal, Task, Team, User
 from app.schemas import ProposalCreate, ProposalRead, ProposalUpdate
 from app.schemas.pagination import PaginatedResponse
+from app.schemas.limits import MAX_PAGE, MAX_PAGE_SIZE, ResourceId
 from app.services.lifecycle import InvalidTransition, transition_proposal
 from app.services.publication import is_publicly_visible, load_task_for_update
 
@@ -21,8 +22,8 @@ versioned_list_router = APIRouter(tags=["proposals"])
 @versioned_list_router.get("/proposals/mine", response_model=PaginatedResponse[ProposalRead])
 async def list_my_proposals(
     response: Response,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
     status_filter: ProposalStatus | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -44,7 +45,7 @@ async def list_my_proposals(
 
 @router.post("/tasks/{task_id}/proposals", response_model=ProposalRead, status_code=201)
 async def create_proposal(
-    task_id: int,
+    task_id: ResourceId,
     payload: ProposalCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -68,7 +69,7 @@ async def create_proposal(
 async def _list_proposals(
     *,
     versioned: bool,
-    task_id: int,
+    task_id: ResourceId,
     page: int = 1,
     page_size: int = 20,
     status_filter: ProposalStatus | None = None,
@@ -93,11 +94,13 @@ async def _list_proposals(
 
 @legacy_list_router.get("/tasks/{task_id}/proposals", response_model=list[ProposalRead])
 async def list_proposals_legacy(
-    task_id: int,
+    response: Response,
+    task_id: ResourceId,
     status_filter: ProposalStatus | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "private, no-store"
     return await _list_proposals(
         versioned=False,
         task_id=task_id,
@@ -109,13 +112,15 @@ async def list_proposals_legacy(
 
 @versioned_list_router.get("/tasks/{task_id}/proposals", response_model=PaginatedResponse[ProposalRead])
 async def list_proposals_v1(
-    task_id: int,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    response: Response,
+    task_id: ResourceId,
+    page: int = Query(1, ge=1, le=MAX_PAGE),
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
     status_filter: ProposalStatus | None = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "private, no-store"
     return await _list_proposals(
         versioned=True,
         task_id=task_id,
@@ -129,13 +134,14 @@ async def list_proposals_v1(
 
 @router.patch("/proposals/{proposal_id}", response_model=ProposalRead)
 async def update_proposal(
-    proposal_id: int,
+    proposal_id: ResourceId,
     payload: ProposalUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(Proposal).options(selectinload(Proposal.task)).where(Proposal.id == proposal_id)
+        .with_for_update().execution_options(populate_existing=True)
     )
     proposal = result.scalar_one_or_none()
     if proposal is None:

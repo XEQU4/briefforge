@@ -10,6 +10,7 @@ from app.domain.status import TaskPublicationStatus, TaskStatus
 from app.models import ClarifyingQuestion, OrganizationMember, Task, User
 from app.schemas import AnswersSubmit, QuestionRead, TaskCreate, TaskRead, TaskUpdate, TaskWithQuestions
 from app.schemas.pagination import PaginatedResponse
+from app.schemas.limits import MAX_PAGE, MAX_PAGE_SIZE, ResourceId
 from app.services.ai_client import GENERATED_CARD_FIELDS, build_card_from_answers, get_clarifying_questions
 from app.services.lifecycle import InvalidTransition, transition_task
 from app.services.publication import (
@@ -38,7 +39,7 @@ SUGGESTIONS = {
 }
 
 
-async def _get_task(task_id: int, db: AsyncSession) -> Task:
+async def _get_task(task_id: ResourceId, db: AsyncSession) -> Task:
     result = await db.execute(select(Task).options(selectinload(Task.questions)).where(Task.id == task_id))
     task = result.scalar_one_or_none()
     if task is None:
@@ -129,7 +130,7 @@ async def create_task(
 
 @router.patch("/tasks/{task_id}/answers", response_model=TaskRead)
 async def answer_task(
-    task_id: int,
+    task_id: ResourceId,
     payload: AnswersSubmit,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -161,7 +162,7 @@ async def answer_task(
 
 @router.patch("/tasks/{task_id}", response_model=TaskRead)
 async def update_task(
-    task_id: int,
+    task_id: ResourceId,
     payload: TaskUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -182,7 +183,7 @@ async def update_task(
 
 @router.post("/tasks/{task_id}/confirm", response_model=TaskRead)
 async def confirm_task(
-    task_id: int,
+    task_id: ResourceId,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -207,7 +208,7 @@ async def confirm_task(
 
 
 async def _change_publication(
-    task_id: int,
+    task_id: ResourceId,
     action: PublicationAction,
     db: AsyncSession,
     user: User,
@@ -223,7 +224,7 @@ async def _change_publication(
 
 @router.post("/tasks/{task_id}/publish", response_model=TaskRead)
 async def publish_task(
-    task_id: int,
+    task_id: ResourceId,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -232,7 +233,7 @@ async def publish_task(
 
 @router.post("/tasks/{task_id}/unpublish", response_model=TaskRead)
 async def unpublish_task(
-    task_id: int,
+    task_id: ResourceId,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -241,7 +242,7 @@ async def unpublish_task(
 
 @router.post("/tasks/{task_id}/archive", response_model=TaskRead)
 async def archive_task(
-    task_id: int,
+    task_id: ResourceId,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -250,7 +251,7 @@ async def archive_task(
 
 @router.get("/tasks/{task_id}/rating")
 async def task_rating(
-    task_id: int,
+    task_id: ResourceId,
     response: Response,
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
@@ -268,7 +269,7 @@ async def task_rating(
 
 @router.get("/tasks/{task_id}/questions", response_model=list[QuestionRead])
 async def get_task_questions(
-    task_id: int,
+    task_id: ResourceId,
     response: Response,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -281,7 +282,7 @@ async def get_task_questions(
 
 @router.get("/tasks/{task_id}", response_model=TaskRead)
 async def get_task(
-    task_id: int,
+    task_id: ResourceId,
     response: Response,
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_optional_current_user),
@@ -390,8 +391,8 @@ async def list_tasks_v1(
     q: str | None = Query(None, max_length=200),
     min_rating: int | None = Query(None, ge=0, le=100),
     max_rating: int | None = Query(None, ge=0, le=100),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
 ):
     return await _list_tasks(

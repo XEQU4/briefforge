@@ -119,3 +119,4 @@ jobs:
       - run: alembic check
       - run: alembic current --verbose | tee alembic-current.txt && grep -q '(head)' alembic-current.txt
       - run: python scripts/postgres_publication_checks.py
+      - run: python scripts/postgres_proposal_checks.py

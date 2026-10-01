@@ -1,4 +1,5 @@
 import hashlib
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -35,6 +36,11 @@ def verify_login_password(password: str, password_hash: str | None) -> bool:
 
 def hash_session_value(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def valid_csrf_token(value: str) -> bool:
+    # secrets.token_urlsafe(32) produces 43 unpadded URL-safe ASCII characters.
+    return re.fullmatch(r"[A-Za-z0-9_-]{43}", value) is not None
 
 
 def utcnow_naive() -> datetime:

@@ -15,14 +15,15 @@ from app.schemas.admin import (
     AdminUserRead, AdminUserUpdate, RevokedSessions,
 )
 from app.schemas.pagination import PaginatedResponse
+from app.schemas.limits import MAX_DATABASE_ID, MAX_PAGE, MAX_PAGE_SIZE, ResourceId
 from app.services.auth_security import utcnow_naive
 
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
-Page = Annotated[int, Query(ge=1)]
-PageSize = Annotated[int, Query(ge=1, le=100)]
+Page = Annotated[int, Query(ge=1, le=MAX_PAGE)]
+PageSize = Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)]
 Search = Annotated[str | None, Query(max_length=200)]
-PositiveId = Annotated[int | None, Query(ge=1)]
+PositiveId = Annotated[int | None, Query(ge=1, le=MAX_DATABASE_ID)]
 DateSort = Literal["newest", "oldest"]
 
 
@@ -123,7 +124,7 @@ async def users(
 
 
 @router.get("/users/{user_id}", response_model=AdminUserDetail)
-async def user_detail(user_id: int, db: AsyncSession = Depends(get_db)):
+async def user_detail(user_id: ResourceId, db: AsyncSession = Depends(get_db)):
     query = user_query().add_columns(
         count_rows(OrganizationMember, OrganizationMember.user_id == User.id).label("organization_membership_count"),
         count_rows(TeamMember, TeamMember.user_id == User.id).label("team_membership_count"),
@@ -160,7 +161,7 @@ async def revoke_active_sessions(db, user_id):
 
 @router.patch("/users/{user_id}", response_model=AdminUserRead)
 async def set_active(
-    user_id: int, payload: AdminUserUpdate, actor: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+    user_id: ResourceId, payload: AdminUserUpdate, actor: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
 ):
     if user_id == actor.id and not payload.is_active:
         raise HTTPException(409, "You cannot deactivate your own account")
@@ -173,7 +174,7 @@ async def set_active(
 
 
 @router.post("/users/{user_id}/revoke-sessions", response_model=RevokedSessions)
-async def revoke_sessions(user_id: int, actor: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def revoke_sessions(user_id: ResourceId, actor: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     if user_id == actor.id:
         raise HTTPException(409, "You cannot revoke your own sessions here")
     await lock_action_users(db, actor, user_id)
@@ -189,7 +190,7 @@ async def organizations(q: Search = None, sort: DateSort = "newest", page: Page 
 
 
 @router.get("/organizations/{organization_id}", response_model=AdminOrganizationRead)
-async def organization_detail(organization_id: int, db: AsyncSession = Depends(get_db)):
+async def organization_detail(organization_id: ResourceId, db: AsyncSession = Depends(get_db)):
     return await detail(db, organization_query().where(Organization.id == organization_id))
 
 
@@ -200,7 +201,7 @@ async def teams(q: Search = None, sort: DateSort = "newest", page: Page = 1, pag
 
 
 @router.get("/teams/{team_id}", response_model=AdminTeamRead)
-async def team_detail(team_id: int, db: AsyncSession = Depends(get_db)):
+async def team_detail(team_id: ResourceId, db: AsyncSession = Depends(get_db)):
     return await detail(db, team_query().where(Team.id == team_id))
 
 
@@ -219,7 +220,7 @@ async def tasks(
 
 
 @router.get("/tasks/{task_id}", response_model=AdminTaskDetail)
-async def task_detail(task_id: int, db: AsyncSession = Depends(get_db)):
+async def task_detail(task_id: ResourceId, db: AsyncSession = Depends(get_db)):
     return await detail(db, select(*(getattr(Task, field) for field in AdminTaskDetail.model_fields)).where(Task.id == task_id))
 
 
@@ -236,7 +237,7 @@ async def proposals(
 
 
 @router.get("/proposals/{proposal_id}", response_model=AdminProposalDetail)
-async def proposal_detail(proposal_id: int, db: AsyncSession = Depends(get_db)):
+async def proposal_detail(proposal_id: ResourceId, db: AsyncSession = Depends(get_db)):
     return await detail(db, proposal_query(AdminProposalDetail).where(Proposal.id == proposal_id))
 
 

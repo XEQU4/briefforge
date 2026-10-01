@@ -184,3 +184,10 @@ settings. The demo dataset remains in the existing database volume.
 Run the regression suite from `backend/` with
 `python -m unittest discover -s tests -v`. It uses an isolated temporary
 database and never touches the running demo database.
+
+The PostgreSQL CI job also runs `python scripts/postgres_proposal_checks.py`
+against its isolated migrated database. This check overlaps two decisions on
+one pending proposal and requires one `200`, one `409`, and a matching final
+terminal state. For a proxy check, `--base-url http://frontend` can target an
+isolated Nginx stack using the same database. Do not point diagnostics at a
+normal development or production database.

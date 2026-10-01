@@ -1,5 +1,6 @@
 """Exercise publication/proposal row-lock ordering against PostgreSQL only."""
 import asyncio
+import secrets
 import sys
 import time
 from datetime import timedelta
@@ -37,7 +38,7 @@ async def main() -> None:
     if engine.dialect.name != "postgresql":
         raise RuntimeError("These checks require PostgreSQL; refusing to run against another database")
     suffix = str(time.time_ns())
-    raw_cookie, csrf = f"publication-{suffix}", f"csrf-{suffix}"
+    raw_cookie, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     async with SessionLocal() as db:
         user = User(email=f"publication-{suffix}@example.test")
         org = Organization(name="Publication concurrency fixture", slug=f"pub-{suffix}")

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +7,7 @@ from app.api.dependencies.auth import get_current_user
 from app.models import Team, TeamMember, TeamMemberRole, User
 from app.schemas import TeamCreate, TeamRead
 from app.schemas.pagination import PaginatedResponse
+from app.schemas.limits import MAX_PAGE, MAX_PAGE_SIZE, ResourceId
 
 router = APIRouter(tags=["teams"])
 legacy_list_router = APIRouter(tags=["teams"])
@@ -62,8 +63,8 @@ async def list_teams_legacy(
 
 @versioned_list_router.get("/teams", response_model=PaginatedResponse[TeamRead])
 async def list_teams_v1(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1, le=MAX_PAGE),
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
     q: str | None = Query(None, max_length=200),
     db: AsyncSession = Depends(get_db),
 ):
@@ -72,11 +73,13 @@ async def list_teams_v1(
 
 @router.get("/teams/mine", response_model=PaginatedResponse[TeamRead])
 async def list_my_teams(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    response: Response,
+    page: int = Query(1, ge=1, le=MAX_PAGE),
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "private, no-store"
     filters = [TeamMember.user_id == user.id]
     query = select(Team).join(TeamMember).where(*filters).order_by(Team.name, Team.id)
     total = await db.scalar(select(func.count()).select_from(Team).join(TeamMember).where(*filters)) or 0
@@ -85,7 +88,7 @@ async def list_my_teams(
 
 
 @router.get("/teams/{team_id}", response_model=TeamRead)
-async def get_team(team_id: int, db: AsyncSession = Depends(get_db)):
+async def get_team(team_id: ResourceId, db: AsyncSession = Depends(get_db)):
     team = await db.get(Team, team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Team not found")

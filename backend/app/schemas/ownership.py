@@ -4,6 +4,7 @@ from hashlib import sha256
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.organization_member import OrganizationMemberRole
+from app.models.organization import normalize_slug
 from app.models.team_member import TeamMemberRole
 
 
@@ -45,6 +46,14 @@ class OrganizationRead(BaseModel):
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     slug: str = Field(min_length=1, max_length=120)
+
+    @field_validator("slug")
+    @classmethod
+    def normalized_slug_must_fit_column(cls, value: str) -> str:
+        value = normalize_slug(value)
+        if len(value) > 120:
+            raise ValueError("normalized slug must have at most 120 characters")
+        return value
 
     @field_validator("name", "slug")
     @classmethod
