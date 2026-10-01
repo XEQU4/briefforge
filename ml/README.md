@@ -4,6 +4,11 @@ This FastAPI service generates exactly three clarifying questions and forms a ta
 
 ## Setup
 
+For the complete Docker installation, use the [root quick start](../README.md#quick-start).
+It needs no key or env file. Optional Compose settings belong in the root `.env`,
+documented by [`.env.example`](../.env.example); `ml/.env` is not copied into the
+Docker image. The instructions below are for running this service separately.
+
 From this directory, create a virtual environment and install the development dependencies:
 
 ```sh
@@ -12,7 +17,7 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 ```
 
-Put the OpenAI key in `ml/.env` as `OPENAI_API_KEY=...`; this is the only file you need to edit. The local `.env.example` uses the nonfunctional placeholder `PASTE_YOUR_OPENAI_API_KEY_HERE`, which selects the rule-based fallback. `ml/.env` is ignored by Git. The service reads `.env` relative to `service/main.py`, regardless of the current directory. Existing shell environment variables take precedence over `.env`; clear a shell `OPENAI_API_KEY` override if you want the file value to take effect. `OPENAI_MODEL` is also read there and defaults to `gpt-4o-mini`. Empty and recognized placeholder values select the fallback; any other nonempty value selects the OpenAI path, and the provider determines whether it is valid. Provider errors for a configured value return controlled HTTP errors instead of switching modes.
+No key is required. To optionally enable OpenAI for a standalone service, put the key in `ml/.env` as `OPENAI_API_KEY=...`. The local `.env.example` uses the nonfunctional placeholder `PASTE_YOUR_OPENAI_API_KEY_HERE`, which selects the rule-based fallback. `ml/.env` is ignored by Git. The service reads this file relative to `service/main.py`, regardless of the current directory. Existing shell environment variables take precedence over `.env`; clear a shell `OPENAI_API_KEY` override if you want the file value to take effect. `OPENAI_MODEL` is also read there and defaults to `gpt-4o-mini`. Empty and recognized placeholder values select the fallback; any other nonempty value selects the OpenAI path, and the provider determines whether it is valid. Provider errors for a configured value return controlled HTTP errors instead of switching modes.
 
 The service works without a configured API key using a rule-based fallback. Question selection considers labelled fields and recognizable evidence in English, Russian, and recognized Kazakh prose, then asks about missing or vague details. It prioritizes useful data, deliverables and success criteria, while asking about the core need first when it is unclear. The fallback cannot understand arbitrary prose as well as the model. Card extraction remains conservative: it recognizes explicit labels and exact service question templates; unfamiliar or edited answer questions are left unmapped. Whole-answer placeholders such as `TBD`, `not sure`, `не знаю`, `пока неизвестно`, and `уточним позже` count as unknown. A substantive answer containing one of those phrases is retained, and meaningful negatives such as “No personal data may be used” remain data. Answers in `/form-card` must be keyed by their exact question text.
 

@@ -1,621 +1,232 @@
 # BriefForge
 
-> **Turn a vague business request into a clear, rated, student-ready challenge.**
+**Turn vague business needs into structured, student-ready challenges.**
 
-BriefForge is an AI-assisted platform that turns vague business needs into structured, rated challenges for student teams. The platform uses AI-assisted clarification, creates an editable task card, calculates a transparent readiness score from 0 to 100, publishes confirmed challenges to a shared catalog, and lets businesses manually review student proposals.
+[![CI](https://github.com/XEQU4/briefforge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/XEQU4/briefforge/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)
+![PostgreSQL 18](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white)
+![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+[![MIT License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
+Businesses clarify a need, improve an editable brief using a transparent readiness score, and publish it. Student teams browse challenges and propose solutions; businesses review those proposals and make the final decision.
 
+![Public challenge catalog with readiness scores](docs/screenshots/01-catalog.png)
 
----
+## Why BriefForge
 
-## Product Preview
+A short business request often leaves students guessing about users, available data, constraints, and success criteria. BriefForge makes those gaps visible before a team starts work. Clarification helps structure the brief; people remain responsible for its content and decisions.
 
-![Task catalog with readiness ratings](docs/screenshots/01-catalog.png)
+## Features
 
-The catalog contains confirmed business challenges with visible readiness scores. Tasks remain available even when their descriptions are incomplete, allowing students to understand how much clarification may still be required before starting work.
+- **Business:** organization workspaces, three targeted clarification questions, resumable drafts, editable task cards, readiness guidance, publication controls, and manual proposal review.
+- **Students:** public challenge and team catalogs, team creation, proposal submission, and proposal history.
+- **Account:** session authentication, editable display name, and validated avatar uploads with persistent storage.
+- **Operations:** a session-protected admin panel, account activation/deactivation, session revocation, migrations, health endpoints, and CI.
+- **AI assistance:** optional OpenAI generation or a conservative deterministic fallback with no API key. Unsupported card details remain unknown rather than being silently filled in.
 
-The platform uses four readiness levels:
+Readiness is calculated by backend rules, not by the language model. The 100-point score covers context/need (20), data (20), expected result (15), success criteria (15), constraints (10), users (10), and contact/interaction format (10). Levels are Draft (0–39), Working (40–69), Ready (70–89), and Priority (90–100). It measures brief completeness, not company reputation or solution quality.
 
-- **Draft** — 0–39
-- **Working** — 40–69
-- **Ready** — 70–89
-- **Priority** — 90–100
+## Product workflow
 
----
-
-## The Problem
-
-Business challenges often begin as short and incomplete descriptions.
-
-A student team may not immediately know:
-
-- who will use the solution;
-- what data or materials are available;
-- what result is expected;
-- what constraints apply;
-- how success should be measured;
-- how the team can communicate with the business.
-
-This means students spend time clarifying the task before they can actually start solving it.
-
----
-
-## Our Solution
-
-BriefForge turns a weak business brief into an actionable challenge through one complete workflow:
-
-```text
-Business need
-     ↓
-AI clarification
-     ↓
-Editable task card
-     ↓
-Readiness score
-     ↓
-Improve missing information
-     ↓
-Publish to catalog
-     ↓
-Student proposal
-     ↓
-Manual business decision
+```mermaid
+flowchart LR
+    A[Business need] --> B[Clarification]
+    B --> C[Editable task card]
+    C --> D[Readiness and improvement]
+    D --> E[Publish]
+    E --> F[Student proposal]
+    F --> G[Business decision]
 ```
 
-AI assists with clarification and structuring, but the business user always remains in control of the final task.
+## Screenshots
 
----
+Current desktop views use fictional organizations, accounts, and projects.
 
-## 1. Start with a Weak Business Brief
+<details>
+<summary>Workspace, editor, proposals, profile, and admin</summary>
 
-![Create business task](docs/screenshots/02-create-task.png)
+| Business workspace | Editable card and readiness |
+| --- | --- |
+| ![Business workspace](docs/screenshots/02-business-workspace.png) | ![Task editor and readiness guidance](docs/screenshots/03-task-editor-readiness.png) |
+| Public challenge | Team directory |
+| ![Published challenge](docs/screenshots/04-public-challenge.png) | ![Student teams](docs/screenshots/05-teams.png) |
+| Proposal review | Profile and avatar |
+| ![Business proposal review](docs/screenshots/06-proposal-review.png) | ![Editable profile](docs/screenshots/07-profile.png) |
 
-The business starts by entering a short problem description in ordinary language.
+![Application admin overview](docs/screenshots/08-admin.png)
 
-The description does not need to be complete or perfectly structured. A topic can optionally be provided to give the AI additional context.
-
-This keeps the first step simple: describe the actual problem first, then improve the task through clarification.
-
----
-
-## 2. AI-Assisted Clarification
-
-![AI-generated clarification questions](docs/screenshots/03-ai-questions.png)
-
-The ML service returns **exactly three targeted clarification questions**.
-
-The questions are designed to identify information that is missing from the initial business request and make the challenge more actionable for students.
-
-The ML service supports two modes:
-
-- **OpenAI provider mode** when an API key is configured;
-- **deterministic rule-based fallback** when no provider key is available.
-
-This means the main workflow can continue even if the external AI provider is unavailable.
-
-The system does **not** automatically publish AI-generated content. The business reviews and controls the final task.
-
----
-
-## 3. Human Answers Become Evidence
-
-![Answer clarification questions](docs/screenshots/04-clarification-answers.png)
-
-The business answers the generated questions directly in the interface.
-
-These answers are stored together with their original questions and are used to construct the editable task card.
-
-The AI is not allowed to silently invent business facts. Generated information is based on the user's supplied description and answers, and the result remains editable before publication.
-
----
-
-## 4. Readiness Scoring and Improvement
-
-![Editable task card and readiness score](docs/screenshots/05-readiness-card.png)
-
-After clarification, the platform creates an editable task card and calculates its readiness.
-
-The interface shows:
-
-- current readiness score;
-- readiness level;
-- score breakdown;
-- missing information;
-- concrete improvement suggestions;
-- editable task fields.
-
-The screenshot above shows a task with a score of **30/100**, clearly indicating which information is still missing.
-
-### Rating Formula
-
-The numeric rating is deterministic backend logic. It is **not generated by the language model**.
-
-| Category | Points |
-|---|---:|
-| Context + business need | 20 |
-| Data and materials | 20 |
-| Expected result | 15 |
-| Success criteria | 15 |
-| Constraints | 10 |
-| Users | 10 |
-| Contact + interaction format | 10 |
-| **Total** | **100** |
-
-### Readiness Levels
-
-| Score | Level |
-|---:|---|
-| 0–39 | Draft |
-| 40–69 | Working |
-| 70–89 | Ready |
-| 90–100 | Priority |
-
-A low rating does not hide a confirmed challenge. It communicates how prepared the task currently is and what should be improved.
-
----
-
-## 5. Task Quality Becomes Visible in the Catalog
-
-![Catalog with multiple readiness levels](docs/screenshots/06-catalog-result.png)
-
-The catalog can contain challenges at different preparation levels.
-
-For example:
-
-```text
-20/100  → Draft
-55/100  → Working
-70/100  → Ready
-90/100  → Priority
-100/100 → Priority
-```
-
-This is the central gamification mechanic of the project:
-
-```text
-More useful task information
-          ↓
-Higher readiness score
-          ↓
-Clearer challenge for students
-```
-
-The score evaluates the **quality and completeness of the task**, not the popularity or reputation of the company that submitted it.
-
----
-
-## Student Choice
-
-Student teams can browse published challenges and decide for themselves which task they want to work on.
-
-They can:
-
-- browse the complete catalog;
-- filter by topic;
-- filter by readiness level;
-- sort by readiness score;
-- inspect the complete task brief;
-- create or select a team;
-- submit a proposal.
-
-A proposal can contain:
-
-- solution idea;
-- implementation plan;
-- deadline;
-- prototype link.
-
-The platform does **not** automatically assign teams to businesses.
-
----
-
-## Business Decision
-
-After proposals are submitted, the business can review them manually.
-
-For each proposal, the business can:
-
-- **Accept**
-- **Reject**
-
-The final decision always remains with the business representative.
-
-AI never automatically chooses the winning team.
-
----
-
-## End-to-End Workflow
-
-The implemented workflow is:
-
-```text
-Draft
-→ 3 clarification questions
-→ Answers
-→ Editable task card
-→ Readiness score
-→ Improvement
-→ Publication
-→ Catalog
-→ Student proposal
-→ Manual business decision
-```
-
-This flow was exercised through the running Docker application rather than simulated with presentation slides.
-
----
+</details>
 
 ## Architecture
 
-```text
-Browser
-   │
-   ▼
-React + Vite
-Nginx
-   │
-   │ /api
-   ▼
-FastAPI Backend
-   │
-   ├── SQLAlchemy
-   ├── SQLite
-   ├── Deterministic Rating Service
-   │
-   └──── HTTP ────► FastAPI ML Service
-                         │
-                         ├── OpenAI provider mode
-                         └── Rule-based fallback
+```mermaid
+flowchart TD
+    Browser -->|localhost:8080| Frontend[Nginx / React SPA]
+    Frontend -->|/api/v1| Backend[FastAPI backend]
+    Backend --> Database[(PostgreSQL)]
+    Backend --> Media[(Persistent avatar media)]
+    Backend --> ML[FastAPI ML service]
+    ML --> Fallback[Deterministic fallback: no key]
+    ML -. optional key .-> OpenAI[OpenAI provider]
+    Migrate[One-shot Alembic migration service] --> Database
+    Migrate -. completes before startup .-> Backend
 ```
 
-Docker Compose runs three application services:
+Compose runs four long-lived services (`frontend`, `backend`, `ml`, `postgres`) and a one-shot `migrate` service. PostgreSQL uses the `postgres-data` volume; avatars use `media-data`. Only Nginx is published to the host, bound to `127.0.0.1`. Backend readiness checks database connectivity; Compose waits for PostgreSQL and migrations before starting the backend, then starts the frontend after backend readiness. ML has its own health check.
 
-```text
-frontend
-backend
-ml
-```
-
-The backend stores data in SQLite using a persistent Docker volume.
-
----
-
-## Tech Stack
+## Tech stack
 
 | Layer | Technologies |
-|---|---|
-| Frontend | React, Vite, JavaScript, CSS, Nginx |
-| Backend | Python, FastAPI, SQLAlchemy, SQLite, Pydantic, HTTPX |
-| AI / ML | Python, FastAPI, OpenAI structured output, deterministic fallback |
-| Infrastructure | Docker, Docker Compose |
+| --- | --- |
+| Frontend | React 19, Vite 8, React Router 7, CSS, Nginx; Node 22 for builds |
+| Backend | Python 3.12, FastAPI, SQLAlchemy, Pydantic, Alembic, PostgreSQL 18, Argon2 |
+| ML | FastAPI, optional OpenAI provider, deterministic fallback |
+| Infrastructure | Docker, Docker Compose, GitHub Actions |
 
----
+## Quick start
 
-# Run BriefForge
+Install Git and Docker with the Compose plugin (Docker Desktop with Linux containers on Windows/macOS). No API key or environment file is required. The first build downloads dependencies.
 
-The easiest way to run the complete project is Docker Compose.
-
-### Requirements
-
-- Git
-- Docker Desktop
-
-### Clone
-
-```powershell
+```sh
 git clone https://github.com/XEQU4/briefforge.git
 cd briefforge
-```
-
-### Start
-
-```powershell
-docker compose up --build -d
-```
-
-Open:
-
-```text
-http://localhost:8080
-```
-
-### Check Services
-
-```powershell
+docker compose up -d --build
 docker compose ps
 ```
 
-Expected application services:
+Open **[http://localhost:8080](http://localhost:8080)** once the four services are healthy. The `migrate` container should exit successfully; inspect it with `docker compose ps -a` if needed. Register an account, open **Business workspace**, create an organization, and start a challenge. The fresh catalog is empty until a challenge is published.
 
-```text
-frontend
-backend
-ml
-```
-
-### View Logs
-
-```powershell
-docker compose logs -f frontend backend ml
-```
-
-### Stop
-
-```powershell
+```sh
+docker compose logs -f
 docker compose down
 ```
 
-The SQLite database is stored in a persistent Docker volume and survives a normal shutdown.
-
-> Do not run `docker compose down -v` unless you intentionally want to delete the persistent demo database.
-
----
-
-## Optional OpenAI Mode
-
-BriefForge can run without an OpenAI API key using the deterministic ML fallback.
-
-To enable provider-backed AI generation, copy the example environment file:
-
-```powershell
-Copy-Item .env.example .env.local
-```
-
-Then configure your local values:
-
-```env
-FRONTEND_PORT=8080
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-4o-mini
-```
-
-Launch using:
-
-```powershell
-docker compose --env-file .env.local up --build -d
-```
-
-Never commit real API keys.
-
----
-
-# Verification
-
-## Development checks
-
-Docker Compose uses PostgreSQL as the primary local development database.
-`docker compose up --build -d` starts PostgreSQL and runs the one-shot
-`migrate` service (`alembic upgrade head`) before starting the backend. The
-PostgreSQL data is kept in the `postgres-data` named volume.
-
-To run migrations manually, from the repository root:
+Normal shutdown and container recreation preserve database records and avatars. To deliberately reset this installation:
 
 ```sh
-docker compose run --rm migrate
+docker compose down -v
 ```
 
-Or from `backend/` with `DATABASE_URL` configured:
+**Warning:** `-v` deletes this Compose project's PostgreSQL and avatar volumes, including accounts, tasks, proposals, and uploaded avatars.
+
+## Administrator setup
+
+Start the app and register a normal account through the UI. From the repository root, promote that existing account:
 
 ```sh
-alembic upgrade head
-alembic current
-alembic history
+docker compose exec backend python scripts/set_admin.py user@example.com
 ```
 
-Run each command from its service directory:
-
-Backend (`backend/`):
+Refresh the browser and choose **Admin** in the account menu, or visit `/admin`. There are no default administrator credentials. Promotion is idempotent; it needs no container rebuild. To explicitly remove administrator access:
 
 ```sh
+docker compose exec backend python scripts/set_admin.py user@example.com --remove
+```
+
+The CLI can demote the operator's own account. The web panel cannot promote/demote administrators, deactivate the current account, or revoke its own sessions.
+
+### Optional demo data
+
+The separate, disabled-by-default `/admin/demo` utility seeds a fixed synthetic catalog using an opt-in Compose overlay and a locally generated token. Through Nginx it is reached at `/api/admin/demo`. It does not grant real admin access or create login credentials. These legacy demo records are unowned; use normal registration and organization/team creation to demonstrate the authenticated workflow. See [local demo instructions](backend/README.md#private-local-demo-admin).
+
+## Optional OpenAI mode
+
+Create an optional root `.env` file. You can copy `.env.example` using `copy .env.example .env` in Windows CMD or `cp .env.example .env` in a POSIX shell. Set `OPENAI_API_KEY` locally, optionally change `OPENAI_MODEL`, then run:
+
+```sh
+docker compose up -d
+```
+
+Compose reads `.env` automatically and recreates services whose configuration changed. Leave `OPENAI_API_KEY=` empty for deterministic generation without external AI calls. Configured provider requests may incur charges. Provider failures produce controlled ML errors; the backend can continue with its own deterministic fallback. Generated content still needs human review. See [ML behavior and evaluation](ml/README.md).
+
+## Configuration
+
+[.env.example](.env.example) is the reference for the standard Compose setup. Shell variables override `.env` values.
+
+| Variable | Local default | Purpose |
+| --- | --- | --- |
+| `FRONTEND_PORT` | `8080` | Browser port on localhost |
+| `POSTGRES_DB` | `briefforge` | Initial database name |
+| `POSTGRES_USER` | `briefforge` | Local database user |
+| `POSTGRES_PASSWORD` | `briefforge_local_dev` | Local-only database password |
+| `SESSION_COOKIE_NAME` | `briefforge_session` | Session cookie name |
+| `SESSION_TTL_SECONDS` | `604800` | Session lifetime (7 days) |
+| `SESSION_COOKIE_SECURE` | `false` | Set `true` when serving over HTTPS |
+| `OPENAI_API_KEY` | empty | Optional; empty selects deterministic fallback |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Model used when a key is configured |
+
+PostgreSQL initialization settings apply when its volume is first created; changing the password in `.env` does not change an existing database user's password. Compose constructs the database URL and media path internally. Advanced external-database/local-service setup is described in [backend/README.md](backend/README.md). Never commit `.env` or real credentials.
+
+## Testing
+
+Use Python 3.12 and Node 22. Run these blocks separately from the repository root, with Python dependencies installed in an activated virtual environment:
+
+```sh
+cd backend
+python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-Frontend (`frontend/`):
+```sh
+cd ml
+python -m pip install -r requirements-dev.txt
+python -m pytest
+```
 
 ```sh
+cd frontend
 npm ci
 npm run build
 ```
 
-ML (`ml/`):
-
-```sh
-python -m pytest
-```
-
-Compose validation (repository root):
+From the repository root:
 
 ```sh
 docker compose config --quiet
-```
-
-## Backend Regression Tests
-
-The backend regression suite was executed inside the Docker Linux environment:
-
-```powershell
 docker compose run --rm --no-deps backend python -m unittest discover -s tests -v
 ```
 
-Verified result:
+Backend tests use temporary SQLite databases and mocked ML transports; ML tests mock provider calls. No paid key is needed. GitHub Actions runs backend tests, frontend builds, ML tests, Compose validation, and PostgreSQL migration/locking checks. The production ML image intentionally omits development test dependencies.
+
+## Project structure
 
 ```text
-Ran 10 tests
-OK
+backend/            API, auth, scoring, admin, migrations, tests
+frontend/           React application and Nginx proxy
+ml/                 Clarification/card service and offline evaluations
+docs/               API contract, release notes, screenshots
+.github/workflows/  Continuous integration
+.env.example        Optional local Compose configuration
+docker-compose.yml  Services and persistent volumes
+LICENSE             MIT license
 ```
 
-The suite covers:
+## Security notes
 
-- complete task lifecycle;
-- clarification answer normalization;
-- rating boundaries and breakdown;
-- invalid state transitions;
-- proposal creation and decisions;
-- ML failure fallback;
-- demo dataset behavior;
-- demo-admin access protection.
+Authentication uses opaque server-side sessions, Argon2 password hashing, and an HttpOnly session cookie. Unsafe authenticated requests require CSRF validation. The backend enforces workspace membership and administrator access. Avatar uploads are size/type/dimension checked, re-encoded, and stored under server-generated names; admin APIs omit password and session/CSRF hashes and disable caching.
 
----
+This is a portfolio/local-deployment project, not a claim of independently audited production security. Keep the local defaults on localhost. Internet deployment requires your own HTTPS, secure cookies, credential management, backups, and operational review. Avatar storage and database volumes both need backup.
 
-## Live Integration
+## API documentation
 
-The complete browser flow produced successful backend requests for:
+[API_CONTRACT.md](docs/API_CONTRACT.md) documents routes, schemas, authorization, and lifecycle rules. The browser uses `/api/v1`; unversioned product aliases remain for compatibility. Real admin endpoints are v1-only. Health is available through Nginx at `/api/health/live` and `/api/health/ready`.
 
-```text
-POST  /tasks
-PATCH /tasks/{id}/answers
-GET   /tasks/{id}/rating
-PATCH /tasks/{id}
-POST  /tasks/{id}/confirm
-GET   /tasks
+## Known limitations
 
-POST  /teams
+- No password recovery, email verification/change, or OAuth.
+- No notifications, realtime messaging, or invitation workflow.
+- Avatars use a local Docker volume rather than object storage.
+- No bundled cloud deployment, TLS termination, or automated backup configuration.
+- Deterministic fallback is intentionally conservative; unknown/ambiguous evidence can require manual card edits. Readiness does not validate business feasibility or AI accuracy.
+- Workspace lists show stored readiness; an unconfirmed card can show 0 there until confirmation. The editor loads the current calculated rating.
 
-POST  /tasks/{id}/proposals
-GET   /tasks/{id}/proposals
-PATCH /proposals/{id}
-```
-
-The running ML service also successfully handled:
-
-```text
-POST /generate-questions
-POST /form-card
-```
-
-This confirms service-to-service integration in the running application.
-
-It is not intended as a comprehensive benchmark of AI model quality.
-
----
-
-## Demo Data
-
-For local testing, the project includes private demo tooling that can populate the application with synthetic data.
-
-The demo catalog contains examples at several readiness levels:
-
-```text
-20  → Draft
-55  → Working
-70  → Ready
-80  → Ready
-90  → Priority
-100 → Priority
-```
-
-This makes it possible to demonstrate catalog ordering and the readiness gamification mechanic without using real business data.
-
----
-
-# 5-Minute Jury Demo
-
-A complete demo can be shown in one prepared scenario.
-
-### 1. Show the Catalog
-
-Show business challenges with different readiness levels.
-
-### 2. Switch to Business
-
-Create a deliberately weak task description.
-
-### 3. Generate Clarification Questions
-
-Show the three AI-assisted questions.
-
-### 4. Answer the Questions
-
-Provide missing details.
-
-### 5. Review the Editable Card
-
-Show the initial readiness score and missing fields.
-
-### 6. Improve the Task
-
-Add missing information and press:
-
-```text
-Save & recalculate
-```
-
-Show the score increasing.
-
-### 7. Publish
-
-Publish the challenge to the common catalog.
-
-### 8. Switch to Student
-
-Open the challenge.
-
-Create or select a team and submit a proposal.
-
-### 9. Switch Back to Business
-
-Review the proposal.
-
-### 10. Make the Decision
-
-Accept or reject the proposal manually.
-
-This demonstrates the entire task-to-team workflow in BriefForge.
-
----
-
-## API Contract
-
-The service interface is documented in:
-
-[docs/API_CONTRACT.md](docs/API_CONTRACT.md)
-
-This file is the source of truth for endpoint paths and request/response formats.
-
----
-
-## Repository Structure
-
-```text
-.
-├── frontend/             React/Vite application
-├── backend/              FastAPI API, database, rating and proposals
-├── ml/                   clarification and task-card AI service
-├── docs/
-│   ├── API_CONTRACT.md
-│   └── screenshots/
-├── docker-compose.yml
-└── README.md
-```
-
----
-
-## Current Scope
-
-The current implementation does not include:
-
-- production authentication;
-- password recovery;
-- realtime chat;
-- notifications;
-- file storage;
-- payment;
-- automatic team assignment;
-- full project management;
-- production deployment infrastructure.
-
-The implementation covers an end-to-end workflow from a raw business need to a student proposal and a manual business decision.
-
----
-
-## Core Principle
-
-The platform does not rank companies.
-
-It measures how ready a **specific business task** is for students to work on.
-
-The better the task is described, the clearer it becomes for student teams — and the higher its readiness score.
+See the prepared [v1.0.0 release notes](docs/RELEASE_NOTES_V1.md).
 
 ## Origin
 
-BriefForge originated as a Hack Alem prototype.
+BriefForge began as a Hack Alem prototype and was developed into this standalone project.
+
+## License
+
+[MIT](LICENSE) · Copyright © 2026 XEQU4.

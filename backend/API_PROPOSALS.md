@@ -1,9 +1,7 @@
-# API proposals for future agreement
+# Historical API proposals
 
-The following are possible future endpoints only. **They are NOT IMPLEMENTED AND NOT PART OF THE SHARED CONTRACT.** Each requires team agreement and an update to `/docs/API_CONTRACT.md` before implementation.
+These were early endpoint proposals. Several have since shipped; this list is retained as historical context. The current source of truth is [API_CONTRACT.md](../docs/API_CONTRACT.md).
 
-- `GET /tasks/{id}` — retrieve a single task card and clarification details.
-- `GET /teams/{id}` — retrieve a team profile.
-- `GET /proposals/{id}` — retrieve one proposal with its related task and team identifiers.
-- `GET /tasks?search=...` — search catalog text fields.
-- `GET /tasks?limit=...&offset=...` — paginate catalog results.
+- Task-card and team-profile reads are implemented, including `/api/v1` routes.
+- Catalog search uses `q`; pagination uses `page` and `page_size`, not the originally proposed `search`, `limit`, and `offset` parameters.
+- A standalone normal-product `GET /proposals/{id}` was not added. Proposal history and task proposal lists cover product workflows; real admin has a separate read-only proposal detail endpoint.

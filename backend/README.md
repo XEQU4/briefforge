@@ -2,17 +2,34 @@
 
 ## Run
 
-From `backend/`, install the existing requirements and start the API:
+The recommended complete installation is the [root Docker quick start](../README.md#quick-start).
+For a standalone backend, use Python 3.12 in a virtual environment and an
+accessible PostgreSQL instance. Before running the commands below, set
+`DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@HOST:5432/DB` in the process
+environment, replacing the placeholders (`set DATABASE_URL=...` in Windows
+CMD or `export DATABASE_URL=...` in a POSIX shell). For local HTTP, also set
+`SESSION_COOKIE_SECURE=false` using the same shell syntax.
+
+From `backend/`, install dependencies and apply migrations before starting the API:
 
 ```sh
 python -m pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
-Before starting locally, apply the schema with `alembic upgrade head`. The
-default `DATABASE_URL` is an isolated SQLite file; set it to a PostgreSQL URL
-to use the Docker development database or another PostgreSQL instance. The
-application does not create or upgrade tables on startup.
+Outside Compose, the legacy `DATABASE_URL` default is
+`sqlite+aiosqlite:///./app.db`. The migration chain targets PostgreSQL; that
+SQLite default is not a supported fresh application installation. Isolated
+tests create their own SQLite schema directly. Compose configures PostgreSQL
+internally and does not publish its database port to the host. The application
+does not create or upgrade tables on startup.
+
+The standalone cookie default is secure; Compose already supplies the local
+HTTP override. Keep
+secure cookies enabled for HTTPS deployment. Root `.env` is consumed by
+Compose, not automatically by a standalone backend process. `AVATAR_DIRECTORY`
+defaults to `media/avatars` locally; Compose fixes it inside the media volume.
 
 The ML service defaults to `http://localhost:8001`, matching `ml/README.md`.
 Set `ML_SERVICE_URL` to override that address, for example
@@ -127,24 +144,36 @@ seed adds 5 unconfirmed clarification drafts, 8 confirmed rated cards, 5
 fictional teams, and 10 proposals. It makes no ML or network calls, never
 selects a team, and does not reset or overwrite existing records. Repeated
 seed requests return `already_seeded`. Its private API is described in
-[DEMO_ADMIN_API.md](DEMO_ADMIN_API.md); future endpoint ideas are in
+[DEMO_ADMIN_API.md](DEMO_ADMIN_API.md); historical endpoint proposals are in
 [API_PROPOSALS.md](API_PROPOSALS.md).
 
-Generate a token locally with Docker (the daemon must be available):
+Seed records are legacy, unowned examples, with no registered accounts or
+workspace memberships. They demonstrate public catalog content; create normal
+accounts, organizations, and teams to demonstrate authenticated editing and
+proposal decisions.
 
-```powershell
+Start the normal stack first. From the repository root, generate a token:
+
+```sh
 docker compose run --rm --no-deps backend python -c "import secrets; print(secrets.token_urlsafe(32))"
-$env:DEMO_ADMIN_TOKEN = 'paste-the-generated-value-here'
+```
+
+Set `DEMO_ADMIN_TOKEN` in the current shell: `set DEMO_ADMIN_TOKEN=VALUE` in
+Windows CMD or `export DEMO_ADMIN_TOKEN=VALUE` in a POSIX shell, replacing
+`VALUE` with the generated token. Then enable the overlay:
+
+```sh
 docker compose -f docker-compose.yml -f backend/compose.demo.yml up --build -d --no-deps backend
 ```
 
-Open `http://localhost:8000/admin/demo` (or `/api/admin/demo` when using the
-frontend proxy). Paste the token in the password field. It remains in page
+Open `http://localhost:8080/api/admin/demo` (adjust the frontend port if
+overridden). The backend host port is not published by Compose. A standalone
+backend exposes `/admin/demo` on its own port. Paste the token in the password field. It remains in page
 memory and is sent only in `X-Demo-Admin-Token`. Do not put it in URLs or
 commit it. Merely editing an env file does not update a running container;
 recreate the backend. To disable the panel:
 
-```powershell
+```sh
 docker compose -f docker-compose.yml up -d --no-deps --force-recreate backend
 ```
 

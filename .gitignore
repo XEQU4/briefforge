@@ -23,9 +23,10 @@ htmlcov/
 
 # SQLite / local databases
 *.db
-*.sqlite
-*.sqlite3
-*.sqlite-*
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite*
 data/
 media/
 
