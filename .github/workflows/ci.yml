@@ -101,12 +101,19 @@ jobs:
       - run: python scripts/postgres_publication_migration.py seed
       - run: alembic upgrade a7c39d012b6e
       - run: python scripts/postgres_profile_migration.py seed
-      - run: alembic upgrade head
+      - run: alembic upgrade c92e6b14d830
       - run: python scripts/postgres_profile_migration.py verify
       - run: alembic downgrade a7c39d012b6e
       - run: python scripts/postgres_profile_migration.py downgraded
-      - run: alembic upgrade head
+      - run: alembic upgrade c92e6b14d830
       - run: python scripts/postgres_profile_migration.py verify
+      - run: python scripts/postgres_admin_migration.py seed
+      - run: alembic upgrade head
+      - run: python scripts/postgres_admin_migration.py verify
+      - run: alembic downgrade c92e6b14d830
+      - run: python scripts/postgres_admin_migration.py downgraded
+      - run: alembic upgrade head
+      - run: python scripts/postgres_admin_migration.py verify
       - run: python scripts/postgres_publication_migration.py verify
       - run: test "$(alembic heads | wc -l)" -eq 1
       - run: alembic check

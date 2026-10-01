@@ -82,6 +82,41 @@ integration suite because SQLite does not provide PostgreSQL row-lock semantics.
 - Schema changes are managed with Alembic migrations. SQLite remains available
   for isolated backend tests; the Docker development stack uses PostgreSQL.
 
+## Application administrator
+
+Register an account normally, then promote that existing account from an
+operator shell (after applying migrations):
+
+```sh
+docker compose exec backend python scripts/set_admin.py user@example.com
+```
+
+Run Compose commands from the repository root. For a local backend environment,
+run `python scripts/set_admin.py user@example.com` from `backend/` with the
+intended `DATABASE_URL`. The command is idempotent and exits nonzero for a missing
+account. It does not create users or passwords. The script ships in the backend
+image; promotion does not require rebuilding or restarting a deployed container.
+Refresh the signed-in browser after promotion and open **Admin** in the account
+menu, or visit `/admin`.
+
+To explicitly remove access as an operator:
+
+```sh
+docker compose exec backend python scripts/set_admin.py user@example.com --remove
+```
+
+Removal takes effect on the next admin API request. This operator command can
+remove your own/last administrator flag; there is no web promotion or demotion.
+The real panel uses session authentication and CSRF. It offers read-only
+installation records plus activation/deactivation and session revocation for
+other users. Deactivation revokes active sessions; reactivation requires a new
+login. Your own account cannot be deactivated or have sessions revoked through
+these admin actions. Admin access does not bypass product workspace membership.
+
+The optional `/admin/demo` utility below remains independent: its local demo
+token cannot grant real admin access, and an admin session cannot replace its
+token.
+
 ## Private local demo admin
 
 The optional local panel at `/admin/demo` is disabled by default. It is a

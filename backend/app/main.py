@@ -1,4 +1,5 @@
 import hmac
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,13 +63,28 @@ def create_app(demo_enabled: bool | None = None, demo_token: str | None = None) 
 
     @application.exception_handler(RequestValidationError)
     async def safe_validation_errors(request: Request, exc: RequestValidationError):
-        if request.url.path.startswith(("/auth/", "/api/v1/auth/", "/api/v1/profile")):
+        if request.url.path.startswith(("/auth/", "/api/v1/auth/", "/api/v1/profile", "/api/v1/admin/")):
             errors = [
                 {key: value for key, value in error.items() if key not in {"input", "ctx", "url"}}
                 for error in exc.errors()
             ]
             return JSONResponse(status_code=422, content={"detail": errors})
         return await request_validation_exception_handler(request, exc)
+
+    @application.middleware("http")
+    async def admin_security_headers(request: Request, call_next):
+        is_admin_api = request.url.path == "/api/v1/admin" or request.url.path.startswith("/api/v1/admin/")
+        try:
+            result = await call_next(request)
+        except Exception:
+            if not is_admin_api:
+                raise
+            logging.getLogger(__name__).exception("Admin API request failed")
+            result = JSONResponse(status_code=500, content={"detail": "Unable to complete admin request"})
+        if is_admin_api:
+            result.headers["Cache-Control"] = "private, no-store"
+            result.headers["X-Content-Type-Options"] = "nosniff"
+        return result
 
     application.include_router(health.router)
     application.include_router(api_router)

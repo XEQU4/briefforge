@@ -16,6 +16,7 @@ COPY app ./app
 COPY tests ./tests
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
+COPY scripts/set_admin.py ./scripts/set_admin.py
 
 USER appuser
 EXPOSE 8000

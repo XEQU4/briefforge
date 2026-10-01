@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, organizations, profile, proposals, tasks, teams
+from app.api.routes import admin, auth, organizations, profile, proposals, tasks, teams
 
 
 product_router = APIRouter()
@@ -8,6 +8,7 @@ for route_module in (auth, organizations, tasks, proposals, teams):
     product_router.include_router(route_module.router)
 
 v1_router = APIRouter(prefix="/api/v1")
+v1_router.include_router(admin.router)
 v1_router.include_router(profile.router)
 # Keep the static proposal history path ahead of the dynamic
 # PATCH /proposals/{proposal_id} route included below.

@@ -14,6 +14,7 @@ import ProposalReview from './pages/ProposalReview'
 import MyProposals from './pages/MyProposals'
 import MyTeams from './pages/MyTeams'
 import Profile from './pages/Profile'
+import Admin from './pages/Admin'
 
 function AppRoutes() {
   return (
@@ -27,6 +28,7 @@ function AppRoutes() {
         <Route path="login" element={<AuthPage mode="login" />} />
         <Route path="register" element={<AuthPage mode="register" />} />
         <Route element={<ProtectedRoute />}>
+          <Route path="admin" element={<Admin />} />
           <Route path="profile" element={<Profile />} />
           <Route path="my-teams" element={<MyTeams />} />
           <Route path="business" element={<BusinessWorkspace />} />

@@ -71,6 +71,7 @@ export default function AccountMenu({ user, loggingOut, onLogout }) {
         <div className="account-identity"><strong>{user.display_name?.trim() || 'Your account'}</strong><span>{user.email}</span></div>
         <div id={menuId} role="menu" aria-label="Account" ref={menuRef} onKeyDown={handleMenuKey}>
           <Link className="account-menu-item" role="menuitem" to="/profile">Profile</Link>
+          {user.is_admin && <Link className="account-menu-item" role="menuitem" to="/admin">Admin</Link>}
           <Link className="account-menu-item" role="menuitem" to="/my-teams">My teams</Link>
           <Link className="account-menu-item" role="menuitem" to="/proposals/mine">My proposals</Link>
           <Link className="account-menu-item" role="menuitem" to="/business">Business workspace</Link>

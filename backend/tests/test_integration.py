@@ -49,7 +49,7 @@ CARD = {
 }
 
 
-class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
+class BackendTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         media = tempfile.TemporaryDirectory(prefix="briefforge-avatar-tests-")
         self.addCleanup(media.cleanup)
@@ -160,6 +160,7 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
             files={"file": (filename, self.avatar_image() if data is None else data, mime)},
         )
 
+class BackendIntegrationTests(BackendTestCase):
     async def test_profile_and_avatar_require_auth_and_csrf(self):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as anonymous:
             self.assertEqual((await anonymous.patch("/api/v1/profile", json={"display_name": "Name"})).status_code, 401)
@@ -878,7 +879,7 @@ class BackendIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         public_user = response.json()
         self.assertEqual(public_user["email"], "person@example.com")
-        self.assertEqual(set(public_user), {"id", "email", "display_name", "avatar_url", "created_at", "updated_at"})
+        self.assertEqual(set(public_user), {"id", "email", "display_name", "avatar_url", "is_admin", "created_at", "updated_at"})
         self.assertNotIn(password, response.text)
         self.assertNotIn("password_hash", response.text)
 

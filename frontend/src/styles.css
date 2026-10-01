@@ -96,6 +96,54 @@ a:hover { color: #d2ceff; }
 .profile-form dl { margin:0; }
 .profile-form>button { justify-self:start; }
 
+
+/* Installation admin: compact reads and explicit account actions. */
+.admin-nav { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:24px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+.admin-section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.admin-section-heading h2 { margin:0; }
+.admin-counts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:0; }
+.admin-counts>div { padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--panel); }
+.admin-counts dt { color:var(--muted); font-size:.82rem; }
+.admin-counts dd { margin:8px 0 0; font-size:1.8rem; font-weight:750; }
+.admin-filters { display:flex; align-items:end; flex-wrap:wrap; gap:12px; margin-bottom:18px; padding:16px; border:1px solid var(--border); border-radius:12px; background:var(--panel); }
+.admin-filters label { flex:1 1 140px; min-width:0; font-size:.8rem; }
+.admin-filters input,.admin-filters select { width:100%; }
+.admin-result-count { margin:0 0 12px; font-size:.82rem; }
+.admin-table-wrap { border:1px solid var(--border); border-radius:12px; background:var(--panel); overflow:hidden; }
+.admin-table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:.76rem; }
+.admin-table th,.admin-table td { padding:12px 9px; text-align:left; vertical-align:top; overflow-wrap:anywhere; border-bottom:1px solid var(--border); }
+.admin-table th { color:var(--muted); font-weight:600; background:rgba(255,255,255,.03); }
+.admin-table tr:last-child td { border-bottom:0; }
+.admin-table th:first-child { width:54px; }
+.admin-table th:last-child { width:80px; }
+.admin-table td a { display:inline-flex; align-items:center; min-height:44px; }
+.admin-cell-text { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.admin-table .status-badge { max-width:100%; white-space:normal; overflow-wrap:anywhere; padding:4px 7px; }
+.admin-flag { font-weight:650; }
+.admin-record-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 24px; margin:24px 0; }
+.admin-record-fields>div { min-width:0; padding-bottom:10px; border-bottom:1px solid var(--border); }
+.admin-record-fields dt { margin-bottom:6px; color:var(--muted); font-size:.78rem; }
+.admin-record-fields dd { margin:0; overflow-wrap:anywhere; white-space:pre-wrap; font-size:.88rem; line-height:1.5; }
+.admin-related-links { display:flex; flex-wrap:wrap; gap:12px 20px; margin:20px 0; font-size:.86rem; }
+.admin-user-actions { border-top:1px solid var(--border); padding-top:20px; margin-top:20px; }
+.admin-user-actions p { font-size:.86rem; }
+.admin-confirmation { margin-top:18px; padding:16px; border:1px solid var(--border-strong); border-radius:12px; background:var(--panel-soft); }
+.admin-confirmation p:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+@media(max-width:900px) {
+  .admin-table,.admin-table tbody,.admin-table tr,.admin-table td { display:block; width:100%; }
+  .admin-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .admin-table tr { padding:12px; border-bottom:1px solid var(--border-strong); }
+  .admin-table tr:last-child { border:0; }
+  .admin-table td,.admin-table tr:last-child td { display:grid; grid-template-columns:minmax(110px,.6fr) minmax(0,1fr); gap:10px; padding:7px 0; border:0; }
+  .admin-table td::before { content:attr(data-label); color:var(--muted); }
+  .admin-table td>* { min-width:0; }
+}
+@media(max-width:480px) {
+  .admin-record-fields { grid-template-columns:1fr; }
+  .admin-filters { padding:12px; }
+  .admin-filters>button { width:100%; }
+}
+
 /* My teams */
 .my-teams-actions { display:flex; align-items:center; flex-wrap:wrap; gap:16px; margin-top:18px; font-size:.86rem; }
 .my-teams-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px; color:var(--muted); }

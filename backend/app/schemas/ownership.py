@@ -14,6 +14,7 @@ class UserRead(BaseModel):
     email: str
     display_name: str | None = None
     avatar_url: str | None = None
+    is_admin: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -22,7 +23,7 @@ class UserRead(BaseModel):
     def include_avatar_url(cls, value):
         if not isinstance(value, dict):
             filename = getattr(value, "avatar_filename", None)
-            data = {key: getattr(value, key) for key in ("id", "email", "display_name", "created_at", "updated_at")}
+            data = {key: getattr(value, key) for key in ("id", "email", "display_name", "is_admin", "created_at", "updated_at")}
             # An opaque revision changes the image src after replacement without
             # exposing the stored filename. The route always checks the session.
             revision = sha256(filename.encode()).hexdigest()[:16] if filename else None

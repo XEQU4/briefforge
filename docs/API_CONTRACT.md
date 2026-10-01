@@ -23,7 +23,7 @@ Runs a lightweight database query. Returns `{ "status": "ready", "database": "ok
 
 ## Authentication
 
-Authentication uses an opaque server-side session. The browser receives the `briefforge_session` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, configured lifetime); PostgreSQL stores only its SHA-256 hash. The `Secure` attribute is controlled by `SESSION_COOKIE_SECURE` and must be enabled behind HTTPS in production. Responses from `/auth/*` and `/api/v1/auth/*` are not cacheable. Public user responses contain only `id`, `email`, `display_name`, `avatar_url` (string or null), `created_at`, and `updated_at`.
+Authentication uses an opaque server-side session. The browser receives the `briefforge_session` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, configured lifetime); PostgreSQL stores only its SHA-256 hash. The `Secure` attribute is controlled by `SESSION_COOKIE_SECURE` and must be enabled behind HTTPS in production. Responses from `/auth/*` and `/api/v1/auth/*` are not cacheable. Current-user responses contain only `id`, `email`, `display_name`, `avatar_url` (string or null), `is_admin` (boolean), `created_at`, and `updated_at`. `is_admin` is an operator-controlled flag exposed to the signed-in user, not a registration/profile input.
 
 For cookie-authenticated unsafe requests, send `X-CSRF-Token` with the value of the separate `briefforge_csrf` cookie. This CSRF cookie is `SameSite=Lax`, `Path=/`, and intentionally readable by browser code; its value is random, and only its hash is stored with the session. The server requires the header, CSRF cookie, and stored hash to match. `GET`, `HEAD`, and `OPTIONS` are exempt. This is a synchronizer-token check; CORS is not used as CSRF protection.
 
@@ -33,7 +33,7 @@ Request: `{ "email": "person@example.com", "password": "at least 10 characters",
 
 Creates a user and session, sets both cookies, and returns the public user with status `201`. Email is normalized. Passwords must be 10–128 characters and not whitespace-only. Duplicate email returns `409`; request validation errors do not echo submitted password values.
 
-Example response (`201`): `{ "id": 1, "email": "person@example.com", "display_name": "Name", "avatar_url": null, "created_at": "datetime", "updated_at": "datetime" }`.
+Example response (`201`): `{ "id": 1, "email": "person@example.com", "display_name": "Name", "avatar_url": null, "is_admin": false, "created_at": "datetime", "updated_at": "datetime" }`.
 
 ### `POST /auth/login` (also `POST /api/v1/auth/login`)
 
@@ -101,6 +101,79 @@ Serves only the signed-in user's current normalized image (`image/webp`), or
 `X-Content-Type-Options: nosniff`. The opaque query revision in `avatar_url`
 changes after replacement to refresh images; it is not an authorization token
 or filename selector. No media directory or filesystem path is exposed.
+
+## Application admin (v1 only)
+
+The `/admin` SPA uses normal session authentication plus the current user's
+`is_admin` flag. Every `/api/v1/admin/*` endpoint enforces this on the backend:
+missing/inactive/expired sessions return `401`; signed-in non-admins receive
+`403`. Unsafe requests require the normal CSRF header. Admin API responses,
+including denied/error responses, use `Cache-Control: private, no-store` and
+`X-Content-Type-Options: nosniff`.
+
+There are no unversioned real-admin aliases. `/admin/demo` remains a separate,
+optional local utility with `DEMO_ADMIN_ENABLED` and `DEMO_ADMIN_TOKEN`;
+neither authentication mechanism grants access to the other. Admin privilege
+does not bypass organization/team membership rules on normal product endpoints.
+
+Register normally, then an operator runs
+`docker compose exec backend python scripts/set_admin.py <email>` from the
+repository root. Add `--remove` to explicitly demote an existing account.
+Refresh the browser after promotion. There is no web promotion/demotion or
+default admin account. See `backend/README.md` for operator details.
+
+### Operational reads
+
+All list endpoints use the standard DB-paginated
+`{ items, page, page_size, total, pages }` envelope. Defaults: page 1, size 20,
+maximum size 100. Searches are trimmed, case-insensitive literal substrings,
+with a 200-character maximum. Newest is the default order; ties use record ID.
+Teams have no creation timestamp, so newest/oldest use ID.
+
+| Endpoint | Filters / ordering |
+| --- | --- |
+| `GET /api/v1/admin/summary` | DB counts: users, active_users, organizations, teams, tasks, published_tasks, proposals, pending_proposals, active_sessions |
+| `GET /api/v1/admin/users` | q (email/name), is_active, is_admin; sort newest/oldest/email |
+| `GET /api/v1/admin/users/{id}` | Safe user fields plus organization/team membership, created-task, submitted-proposal, and active-session counts |
+| `GET /api/v1/admin/organizations` | q (name/slug); sort newest/oldest |
+| `GET /api/v1/admin/organizations/{id}` | Organization fields plus member_count/task_count |
+| `GET /api/v1/admin/teams` | q (name/interests/skills/technologies); sort newest/oldest |
+| `GET /api/v1/admin/teams/{id}` | Team fields plus member_count/proposal_count |
+| `GET /api/v1/admin/tasks` | q (title/topic/context/need), status, publication_status, organization_id; sort newest/oldest/rating |
+| `GET /api/v1/admin/tasks/{id}` | Read-only task card, lifecycle/publication/readiness fields and ownership IDs |
+| `GET /api/v1/admin/proposals` | status, task_id, team_id, submitted_by_user_id |
+| `GET /api/v1/admin/proposals/{id}` | Read-only proposal, including plan/deadline/link |
+| `GET /api/v1/admin/sessions` | q (user email/name), user_id, status (active/revoked/expired/inactive) |
+
+`AdminUserRead` contains id, email, display_name, is_active, is_admin, has_avatar,
+last_login_at, created_at, updated_at. Session rows contain id, user_id,
+email/display_name, created_at, expires_at, last_seen_at, revoked_at, and a
+derived status. Active sessions are unrevoked, unexpired, and belong to an
+active user; status precedence is revoked, expired, inactive, active.
+No password hash, session/CSRF hash, raw token, avatar filename/path, or
+admin avatar URL is returned.
+
+### Safe account actions
+
+- `PATCH /api/v1/admin/users/{id}`: accepts only
+  `{ "is_active": true|false }` (strict JSON boolean, required).
+  Unknown fields, including `is_admin`, are rejected with `422`.
+  Deactivation atomically revokes that user's unexpired, unrevoked sessions.
+  Reactivation does not restore sessions or issue new ones.
+  Returns `AdminUserRead`.
+- `POST /api/v1/admin/users/{id}/revoke-sessions`: revokes unexpired,
+  unrevoked sessions; returns `{ "revoked_count": number }`.
+  Repeated revocation safely returns zero.
+
+Self-deactivation and self session revocation return `409`. Mutations lock
+the actor/target user rows in ID order and recheck the actor's active/admin
+state after waiting, preventing two web admins from deactivating one another
+concurrently. Login session issuance uses the same user-row lock. Operator
+demotion remains an explicit out-of-band action.
+
+Organizations, teams, tasks, and proposals are read-only here. There is no
+generic model editor, deletion, ownership reassignment, or lifecycle/status
+mutation API.
 
 ## Organizations
 

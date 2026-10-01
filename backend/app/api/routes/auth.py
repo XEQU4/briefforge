@@ -60,7 +60,8 @@ async def register(payload: RegisterRequest, response: Response, db: AsyncSessio
 @router.post("/login", response_model=UserRead)
 async def login(payload: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)) -> User:
     normalized_email = str(payload.email).strip().casefold()
-    user = await db.scalar(select(User).where(User.email == normalized_email))
+    # Serialize session issuance with admin deactivation/session revocation.
+    user = await db.scalar(select(User).where(User.email == normalized_email).with_for_update())
     password_ok = verify_login_password(payload.password, user.password_hash if user is not None else None)
     if user is None or not user.is_active or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
